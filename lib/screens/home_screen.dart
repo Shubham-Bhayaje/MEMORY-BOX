@@ -342,11 +342,18 @@ class _HomeScreenState extends State<HomeScreen>
           ),
           child: Row(
             children: [
-              const Icon(Icons.cloud_done, color: AppTheme.primary),
-              const SizedBox(width: 8),
+              Image.asset(
+                'assets/images/logo.png',
+                width: 26,
+                height: 26,
+              ),
+              const SizedBox(width: 10),
               Text(
                 'Memory Box',
-                style: AppTheme.titleSm.copyWith(color: AppTheme.primary),
+                style: AppTheme.titleSm.copyWith(
+                  color: AppTheme.primary,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ],
           ),
