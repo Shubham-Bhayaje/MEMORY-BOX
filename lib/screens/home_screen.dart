@@ -6,6 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 import '../database/db_helper.dart';
 import 'memory_feed.dart';
@@ -344,15 +345,17 @@ class _HomeScreenState extends State<HomeScreen>
             children: [
               Image.asset(
                 'assets/images/logo.png',
-                width: 26,
-                height: 26,
+                width: 34,
+                height: 34,
               ),
               const SizedBox(width: 10),
               Text(
                 'Memory Box',
-                style: AppTheme.titleSm.copyWith(
+                style: GoogleFonts.inter(
                   color: AppTheme.primary,
+                  fontSize: 20,
                   fontWeight: FontWeight.w700,
+                  letterSpacing: -0.3,
                 ),
               ),
             ],
