@@ -73,6 +73,30 @@ void main() {
       expect(deserialized.id, 'test-id-no-ai');
       expect(deserialized.aiAnalysis, isNull);
       expect(deserialized.tags, isEmpty);
+      expect(deserialized.isPinned, isFalse);
+    });
+
+    test('Memory Serialization and Deserialization with isPinned and copyWith', () {
+      final now = DateTime.now();
+      final memory = Memory(
+        id: 'pinned-test',
+        type: MemoryType.text,
+        title: 'Pinned Note',
+        content: 'Content',
+        tags: ['pinned'],
+        createdAt: now,
+        isPinned: true,
+      );
+
+      final map = memory.toMap();
+      expect(map['is_pinned'], 1);
+
+      final deserialized = Memory.fromMap(map);
+      expect(deserialized.isPinned, isTrue);
+
+      final unpinned = deserialized.copyWith(isPinned: false);
+      expect(unpinned.isPinned, isFalse);
+      expect(unpinned.title, 'Pinned Note');
     });
   });
 

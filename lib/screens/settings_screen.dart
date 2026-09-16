@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
+import 'package:local_auth/local_auth.dart';
+import 'package:share_plus/share_plus.dart';
 import '../database/db_helper.dart';
 import '../theme/app_theme.dart';
 import '../utils/error_handler.dart';
@@ -25,6 +27,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   final _apiKeyController = TextEditingController();
   final _endpointController = TextEditingController();
   final _modelController = TextEditingController();
+  final _localAuth = LocalAuthentication();
 
   String _selectedProvider = 'github';
   bool _isLoading = true;
@@ -35,6 +38,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool? _testSuccess;
   bool _useSystemSTT = true;
   bool _systemOverlayEnabled = false;
+  bool _biometricLockEnabled = false;
   bool _obscureApiKey = true;
 
   late AnimationController _pulseController;
@@ -161,6 +165,8 @@ class _SettingsScreenState extends State<SettingsScreen>
         _useSystemSTT = (settings['use_system_stt'] ?? '1') == '1';
         _systemOverlayEnabled =
             (settings['system_overlay_enabled'] ?? '0') == '1';
+        _biometricLockEnabled =
+            (settings['biometric_lock_enabled'] ?? '0') == '1';
         _isLoading = false;
       });
     } catch (e) {
@@ -541,9 +547,13 @@ class _SettingsScreenState extends State<SettingsScreen>
         _buildIntelligenceEngine(),
         const SizedBox(height: 32),
         
-        // System Overlay (hidden for now — needs work)
-        // _buildSystemOverlay(),
-        // const SizedBox(height: 32),
+        // Security & Privacy
+        _buildSecuritySection(),
+        const SizedBox(height: 32),
+        
+        // System Overlay
+        _buildSystemOverlay(),
+        const SizedBox(height: 32),
         
         // Account
         _buildAccountSection(),
@@ -864,6 +874,125 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
+  Widget _buildSecuritySection() {
+    return Container(
+      decoration: AppTheme.glassDecoration(),
+      padding: const EdgeInsets.all(AppTheme.containerPadding),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.shield_rounded, color: AppTheme.primary, size: 24),
+              const SizedBox(width: 8),
+              Text(
+                'Security & Privacy',
+                style: AppTheme.headlineMd.copyWith(fontSize: 22),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryContainer.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.fingerprint_rounded,
+                  color: AppTheme.primary,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Biometric App Lock',
+                      style: AppTheme.bodyMd.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Require fingerprint or face ID to open your vault.',
+                      style: AppTheme.bodyMd.copyWith(
+                        color: AppTheme.onSurfaceVariant,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Switch(
+                value: _biometricLockEnabled,
+                onChanged: _setBiometricLockEnabled,
+                activeColor: AppTheme.primary,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _setBiometricLockEnabled(bool enabled) async {
+    try {
+      if (enabled) {
+        final canAuth = await _localAuth.canCheckBiometrics ||
+            await _localAuth.isDeviceSupported();
+        if (!canAuth) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Biometric authentication is not available on this device.',
+              ),
+            ),
+          );
+          return;
+        }
+
+        final authenticated = await _localAuth.authenticate(
+          localizedReason: 'Authenticate to enable biometric app lock',
+          options: const AuthenticationOptions(
+            stickyAuth: true,
+            biometricOnly: false,
+          ),
+        );
+
+        if (!authenticated) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Authentication cancelled or failed.')),
+          );
+          return;
+        }
+      }
+
+      await _dbHelper.setBiometricLockEnabled(enabled);
+      if (!mounted) return;
+      setState(() => _biometricLockEnabled = enabled);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            enabled
+                ? 'Biometric lock enabled. Vault will lock when minimized.'
+                : 'Biometric lock disabled.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error setting biometric lock: $e')),
+      );
+    }
+  }
+
   Widget _buildAccountSection() {
     return Container(
       decoration: AppTheme.glassDecoration(),
@@ -1041,31 +1170,97 @@ class _SettingsScreenState extends State<SettingsScreen>
             const Text('Export Memory Vault'),
           ],
         ),
-        content: const Text(
-          'Choose your preferred export format. You can copy the raw exported data directly to your clipboard or share it.',
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Choose your preferred export format. You can export a complete ZIP backup with all media, or export text as Markdown or JSON.',
+              style: TextStyle(fontSize: 13.5),
+            ),
+            const SizedBox(height: 18),
+            // ZIP with Media
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                _exportZipVault();
+              },
+              icon: const Icon(Icons.archive_rounded, color: Colors.white),
+              label: const Text('Full Backup (ZIP with Media)'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+            const SizedBox(height: 10),
+            // Markdown
+            OutlinedButton.icon(
+              onPressed: () async {
+                Navigator.of(ctx).pop();
+                final markdown = await _dbHelper.exportMemoriesAsMarkdown();
+                _showExportPreviewDialog('Markdown Export', markdown);
+              },
+              icon: const Icon(Icons.description_rounded),
+              label: const Text('Export Markdown'),
+            ),
+            const SizedBox(height: 10),
+            // JSON
+            OutlinedButton.icon(
+              onPressed: () async {
+                Navigator.of(ctx).pop();
+                final json = await _dbHelper.exportAllDataAsJson();
+                _showExportPreviewDialog('JSON Export', json);
+              },
+              icon: const Icon(Icons.data_object_rounded),
+              label: const Text('Export JSON'),
+            ),
+          ],
         ),
         actions: [
-          OutlinedButton.icon(
-            onPressed: () async {
-              Navigator.of(ctx).pop();
-              final markdown = await _dbHelper.exportMemoriesAsMarkdown();
-              _showExportPreviewDialog('Markdown Export', markdown);
-            },
-            icon: const Icon(Icons.description_rounded),
-            label: const Text('Export Markdown'),
-          ),
-          ElevatedButton.icon(
-            onPressed: () async {
-              Navigator.of(ctx).pop();
-              final json = await _dbHelper.exportAllDataAsJson();
-              _showExportPreviewDialog('JSON Export', json);
-            },
-            icon: const Icon(Icons.data_object_rounded),
-            label: const Text('Export JSON'),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _exportZipVault() async {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Row(
+          children: [
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+            ),
+            SizedBox(width: 12),
+            Text('Creating full vault ZIP archive with media...'),
+          ],
+        ),
+        duration: Duration(seconds: 4),
+      ),
+    );
+
+    try {
+      final zipFile = await _dbHelper.exportVaultAsZip();
+      if (!mounted) return;
+
+      await Share.shareXFiles(
+        [XFile(zipFile.path)],
+        text: 'Memory Box Vault Backup (Markdown, JSON, Media)',
+        subject: 'Memory Box Vault Backup',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ErrorHandler.showErrorSnackBar(
+        context,
+        message: 'Failed to create vault ZIP: ${ErrorHandler.getUserMessage(e)}',
+      );
+    }
   }
 
   void _showExportPreviewDialog(String title, String content) {

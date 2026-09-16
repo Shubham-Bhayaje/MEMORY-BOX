@@ -1,4 +1,7 @@
 import 'dart:convert';
+import 'dart:io';
+import 'package:archive/archive.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../models/memory.dart';
@@ -29,7 +32,7 @@ class DBHelper {
 
     return await openDatabase(
       path,
-      version: 6,
+      version: 7,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
       onOpen: (db) async {
@@ -68,7 +71,8 @@ class DBHelper {
         media_path TEXT,
         ai_analysis TEXT,
         tags TEXT,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        is_pinned INTEGER DEFAULT 0
       )
     ''');
 
@@ -82,7 +86,8 @@ class DBHelper {
         model_name TEXT,
         use_system_stt INTEGER DEFAULT 1,
         system_overlay_enabled INTEGER DEFAULT 0,
-        pending_overlay_action TEXT
+        pending_overlay_action TEXT,
+        biometric_lock_enabled INTEGER DEFAULT 0
       )
     ''');
 
@@ -252,6 +257,18 @@ class DBHelper {
     if (oldVersion < 6) {
       await _migrateApiKeysToSecureStorage(db);
     }
+    if (oldVersion < 7) {
+      try {
+        await db.execute(
+          'ALTER TABLE memories ADD COLUMN is_pinned INTEGER DEFAULT 0',
+        );
+      } catch (_) {}
+      try {
+        await db.execute(
+          'ALTER TABLE settings ADD COLUMN biometric_lock_enabled INTEGER DEFAULT 0',
+        );
+      } catch (_) {}
+    }
   }
 
   Future<void> _migrateApiKeysToSecureStorage(Database db) async {
@@ -314,12 +331,55 @@ class DBHelper {
       'memories',
       where: whereClause,
       whereArgs: whereArgs,
-      orderBy: 'created_at DESC',
+      orderBy: 'is_pinned DESC, created_at DESC',
     );
 
     return List.generate(maps.length, (i) {
       return Memory.fromMap(maps[i]);
     });
+  }
+
+  Future<int> togglePin(String id, bool isPinned) async {
+    final db = await database;
+    return await db.update(
+      'memories',
+      {'is_pinned': isPinned ? 1 : 0},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// Retrieves memories for the "On This Day" feature.
+  /// Looks for memories created on the same day in past years,
+  /// or milestone memories from past days/weeks to resurface.
+  Future<List<Memory>> getOnThisDayMemories() async {
+    final db = await database;
+    final now = DateTime.now();
+    final monthDay =
+        '${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    final currentYear = now.year.toString();
+
+    // 1. Anniversary memories (same month & day in previous years)
+    final List<Map<String, dynamic>> anniversaryMaps = await db.rawQuery('''
+      SELECT * FROM memories
+      WHERE strftime('%m-%d', created_at) = ?
+        AND strftime('%Y', created_at) != ?
+      ORDER BY created_at DESC
+    ''', [monthDay, currentYear]);
+
+    if (anniversaryMaps.isNotEmpty) {
+      return anniversaryMaps.map((m) => Memory.fromMap(m)).toList();
+    }
+
+    // 2. Resurface milestone memories older than 2 days (up to 3 items)
+    final List<Map<String, dynamic>> milestoneMaps = await db.rawQuery('''
+      SELECT * FROM memories
+      WHERE date(created_at) <= date('now', '-2 days')
+      ORDER BY created_at DESC
+      LIMIT 3
+    ''');
+
+    return milestoneMaps.map((m) => Memory.fromMap(m)).toList();
   }
 
   Future<int> deleteMemory(String id) async {
@@ -378,6 +438,64 @@ class DBHelper {
     return buffer.toString();
   }
 
+  /// Exports the entire vault as a structured ZIP file containing:
+  /// - `memories.md`: Markdown export of all memories
+  /// - `memories.json`: Complete JSON database dump
+  /// - `media/`: Directory with all attached photos, screenshots, and audio files
+  Future<File> exportVaultAsZip({Directory? targetDirectory}) async {
+    final memories = await getMemories();
+    final jsonContent = await exportAllDataAsJson();
+    final markdownContent = await exportMemoriesAsMarkdown();
+
+    final archive = Archive();
+
+    // 1. Add markdown file
+    final mdBytes = utf8.encode(markdownContent);
+    archive.addFile(ArchiveFile('memories.md', mdBytes.length, mdBytes));
+
+    // 2. Add JSON file
+    final jsonBytes = utf8.encode(jsonContent);
+    archive.addFile(ArchiveFile('memories.json', jsonBytes.length, jsonBytes));
+
+    // 3. Add all attached media files
+    final addedFileNames = <String>{};
+    for (final memory in memories) {
+      for (final path in memory.mediaPaths) {
+        final file = File(path);
+        if (file.existsSync()) {
+          final fileName = basename(path);
+          if (!addedFileNames.contains(fileName)) {
+            addedFileNames.add(fileName);
+            try {
+              final fileBytes = await file.readAsBytes();
+              archive.addFile(
+                ArchiveFile('media/$fileName', fileBytes.length, fileBytes),
+              );
+            } catch (_) {}
+          }
+        }
+      }
+    }
+
+    final zipEncoder = ZipEncoder();
+    final zipData = zipEncoder.encode(archive);
+
+    Directory outputDir;
+    if (targetDirectory != null) {
+      outputDir = targetDirectory;
+    } else {
+      try {
+        outputDir = await getTemporaryDirectory();
+      } catch (_) {
+        outputDir = Directory.systemTemp;
+      }
+    }
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final zipFile = File(join(outputDir.path, 'memory_box_backup_$timestamp.zip'));
+    await zipFile.writeAsBytes(zipData);
+    return zipFile;
+  }
+
   // --- SETTINGS OPERATIONS ---
 
   Future<Map<String, String>> getSettings() async {
@@ -408,6 +526,8 @@ class DBHelper {
             maps[0]['system_overlay_enabled']?.toString() ?? '0',
         'pending_overlay_action':
             maps[0]['pending_overlay_action'] as String? ?? '',
+        'biometric_lock_enabled':
+            maps[0]['biometric_lock_enabled']?.toString() ?? '0',
       };
     }
     return {
@@ -418,7 +538,32 @@ class DBHelper {
       'use_system_stt': '1',
       'system_overlay_enabled': '0',
       'pending_overlay_action': '',
+      'biometric_lock_enabled': '0',
     };
+  }
+
+  Future<bool> getBiometricLockEnabled() async {
+    final db = await database;
+    try {
+      final maps = await db.query(
+        'settings',
+        columns: ['biometric_lock_enabled'],
+        where: 'id = 1',
+      );
+      if (maps.isNotEmpty) {
+        return (maps.first['biometric_lock_enabled'] as int? ?? 0) == 1;
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  Future<int> setBiometricLockEnabled(bool enabled) async {
+    final db = await database;
+    return await db.update(
+      'settings',
+      {'biometric_lock_enabled': enabled ? 1 : 0},
+      where: 'id = 1',
+    );
   }
 
   // --- PENDING OVERLAY ACTION OPERATIONS ---

@@ -224,5 +224,116 @@ void main() {
       final afterPurge = await dbHelper.getMemories();
       expect(afterPurge, isEmpty);
     });
+
+    test('Pin Memories and Ordering', () async {
+      final oldNormal = Memory(
+        id: 'old-normal',
+        type: MemoryType.text,
+        title: 'Old Normal Note',
+        content: '',
+        tags: [],
+        createdAt: DateTime.now().subtract(const Duration(days: 5)),
+        isPinned: false,
+      );
+
+      final newNormal = Memory(
+        id: 'new-normal',
+        type: MemoryType.text,
+        title: 'New Normal Note',
+        content: '',
+        tags: [],
+        createdAt: DateTime.now().subtract(const Duration(days: 1)),
+        isPinned: false,
+      );
+
+      final oldPinned = Memory(
+        id: 'old-pinned',
+        type: MemoryType.text,
+        title: 'Old Pinned Note',
+        content: '',
+        tags: [],
+        createdAt: DateTime.now().subtract(const Duration(days: 10)),
+        isPinned: true,
+      );
+
+      await dbHelper.insertMemory(oldNormal);
+      await dbHelper.insertMemory(newNormal);
+      await dbHelper.insertMemory(oldPinned);
+
+      final memories = await dbHelper.getMemories();
+      expect(memories.length, 3);
+      // Pinned note should be first even though it's older!
+      expect(memories[0].id, 'old-pinned');
+      expect(memories[1].id, 'new-normal');
+      expect(memories[2].id, 'old-normal');
+
+      // Toggle pin of newNormal to true
+      await dbHelper.togglePin('newNormal', true);
+      await dbHelper.togglePin('new-normal', true);
+      final updatedMemories = await dbHelper.getMemories();
+      expect(updatedMemories[0].id, 'new-normal');
+      expect(updatedMemories[1].id, 'old-pinned');
+
+      // Unpin old-pinned
+      await dbHelper.togglePin('old-pinned', false);
+      final unpinnedMemories = await dbHelper.getMemories();
+      expect(unpinnedMemories[0].id, 'new-normal');
+      expect(unpinnedMemories.last.id, 'old-pinned');
+
+      await dbHelper.purgeAllMemories();
+    });
+
+    test('Biometric Lock Settings', () async {
+      expect(await dbHelper.getBiometricLockEnabled(), isFalse);
+
+      await dbHelper.setBiometricLockEnabled(true);
+      expect(await dbHelper.getBiometricLockEnabled(), isTrue);
+
+      final settings = await dbHelper.getSettings();
+      expect(settings['biometric_lock_enabled'], '1');
+
+      await dbHelper.setBiometricLockEnabled(false);
+      expect(await dbHelper.getBiometricLockEnabled(), isFalse);
+    });
+
+    test('On This Day Memories Retrieval', () async {
+      final now = DateTime.now();
+      final anniversaryMemory = Memory(
+        id: 'anniversary-1',
+        type: MemoryType.text,
+        title: 'Memory From Last Year',
+        content: 'Historical thought',
+        tags: ['past'],
+        createdAt: DateTime(now.year - 1, now.month, now.day, 12, 0),
+      );
+
+      await dbHelper.insertMemory(anniversaryMemory);
+
+      final onThisDay = await dbHelper.getOnThisDayMemories();
+      expect(onThisDay.isNotEmpty, isTrue);
+      expect(onThisDay.any((m) => m.id == 'anniversary-1'), isTrue);
+
+      await dbHelper.purgeAllMemories();
+    });
+
+    test('Export Vault as ZIP archive', () async {
+      final memory = Memory(
+        id: 'zip-test-1',
+        type: MemoryType.text,
+        title: 'Note for ZIP Export',
+        content: 'ZIP content verification',
+        tags: ['zip'],
+        createdAt: DateTime.now(),
+      );
+
+      await dbHelper.insertMemory(memory);
+
+      final zipFile = await dbHelper.exportVaultAsZip();
+      expect(await zipFile.exists(), isTrue);
+      expect(await zipFile.length(), greaterThan(0));
+
+      await zipFile.delete();
+      await dbHelper.purgeAllMemories();
+    });
   });
 }

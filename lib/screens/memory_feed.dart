@@ -28,6 +28,8 @@ class MemoryFeedState extends State<MemoryFeed> with TickerProviderStateMixin {
   final stt.SpeechToText _speechToText = stt.SpeechToText();
 
   List<Memory> _memories = [];
+  List<Memory> _onThisDayMemories = [];
+  bool _dismissedOnThisDay = false;
   bool _isLoading = true;
 
   /// Whether the feed currently has any memories to display.
@@ -164,9 +166,15 @@ class MemoryFeedState extends State<MemoryFeed> with TickerProviderStateMixin {
         type: _filterType == 'all' ? null : _filterType,
       );
 
+      List<Memory> onThisDay = [];
+      if (_filterType == 'all' && query.trim().isEmpty) {
+        onThisDay = await _dbHelper.getOnThisDayMemories();
+      }
+
       if (!mounted) return;
       setState(() {
         _memories = memories;
+        _onThisDayMemories = onThisDay;
         _isLoading = false;
         _errorMessage = null;
       });
@@ -178,6 +186,21 @@ class MemoryFeedState extends State<MemoryFeed> with TickerProviderStateMixin {
         _errorMessage = ErrorHandler.getUserMessage(e);
       });
     }
+  }
+
+  Future<void> _togglePin(Memory memory) async {
+    final newPinned = !memory.isPinned;
+    await _dbHelper.togglePin(memory.id, newPinned);
+    await loadMemories(showLoader: false);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          newPinned ? 'Memory pinned to top.' : 'Memory unpinned.',
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   void _onSearchChanged(String value) {
@@ -313,14 +336,39 @@ class MemoryFeedState extends State<MemoryFeed> with TickerProviderStateMixin {
                         ? _buildErrorState()
                         : _memories.isEmpty
                             ? _buildEmptyState()
-                            : RefreshIndicator(
-                                onRefresh: () => loadMemories(showLoader: false),
-                                child: ListView.builder(
-                                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 92),
-                                  itemCount: _memories.length,
-                                  itemBuilder: (context, index) =>
-                                      _buildMemoryCard(_memories[index]),
-                                ),
+                            : Builder(
+                                builder: (context) {
+                                  final showOnThisDay =
+                                      _onThisDayMemories.isNotEmpty &&
+                                          !_dismissedOnThisDay &&
+                                          _searchController.text.trim().isEmpty &&
+                                          _filterType == 'all';
+                                  return RefreshIndicator(
+                                    onRefresh: () =>
+                                        loadMemories(showLoader: false),
+                                    child: ListView.builder(
+                                      padding: const EdgeInsets.fromLTRB(
+                                        20,
+                                        8,
+                                        20,
+                                        92,
+                                      ),
+                                      itemCount: _memories.length +
+                                          (showOnThisDay ? 1 : 0),
+                                      itemBuilder: (context, index) {
+                                        if (showOnThisDay && index == 0) {
+                                          return _buildOnThisDaySection();
+                                        }
+                                        final memoryIndex = showOnThisDay
+                                            ? index - 1
+                                            : index;
+                                        return _buildMemoryCard(
+                                          _memories[memoryIndex],
+                                        );
+                                      },
+                                    ),
+                                  );
+                                },
                               ),
               ),
             ],
@@ -515,6 +563,187 @@ class MemoryFeedState extends State<MemoryFeed> with TickerProviderStateMixin {
         ),
       ),
     );
+  }
+
+  Widget _buildOnThisDaySection() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              AppTheme.secondary.withValues(alpha: 0.12),
+              AppTheme.primary.withValues(alpha: 0.06),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: AppTheme.secondary.withValues(alpha: 0.25),
+            width: 1.2,
+          ),
+        ),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: AppTheme.secondary.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.auto_awesome,
+                        color: AppTheme.secondary,
+                        size: 18,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'On This Day',
+                          style: GoogleFonts.inter(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.primary,
+                          ),
+                        ),
+                        Text(
+                          'Rediscover past memories & ideas',
+                          style: AppTheme.bodyMd.copyWith(
+                            fontSize: 11,
+                            color: AppTheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 18, color: AppTheme.outline),
+                  tooltip: 'Dismiss for now',
+                  onPressed: () => setState(() => _dismissedOnThisDay = true),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 106,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: _onThisDayMemories.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 10),
+                itemBuilder: (context, idx) {
+                  final memory = _onThisDayMemories[idx];
+                  final timeAgo = _formatTimeAgo(memory.createdAt);
+                  return InkWell(
+                    onTap: () => _editMemory(memory),
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      width: 200,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.9),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: AppTheme.outlineVariant.withValues(alpha: 0.5),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.03),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                AppTheme.getMemoryTypeIcon(memory.type.name),
+                                size: 14,
+                                color: AppTheme.getMemoryTypeColor(memory.type.name),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  timeAgo,
+                                  style: AppTheme.labelCaps.copyWith(
+                                    color: AppTheme.secondary,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            memory.title.isNotEmpty ? memory.title : 'Untitled Memory',
+                            style: AppTheme.bodyMd.copyWith(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            memory.content.isNotEmpty
+                                ? memory.content
+                                : (memory.aiAnalysis?.description ?? ''),
+                            style: AppTheme.bodyMd.copyWith(
+                              fontSize: 11,
+                              color: AppTheme.onSurfaceVariant,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatTimeAgo(DateTime date) {
+    final now = DateTime.now();
+    final difference = now.difference(date);
+    if (difference.inDays >= 365) {
+      final years = (difference.inDays / 365).floor();
+      return '$years ${years == 1 ? 'year' : 'years'} ago';
+    } else if (difference.inDays >= 30) {
+      final months = (difference.inDays / 30).floor();
+      return '$months ${months == 1 ? 'month' : 'months'} ago';
+    } else if (difference.inDays >= 7) {
+      final weeks = (difference.inDays / 7).floor();
+      return '$weeks ${weeks == 1 ? 'week' : 'weeks'} ago';
+    } else if (difference.inDays > 0) {
+      return '${difference.inDays} days ago';
+    } else {
+      return 'Today';
+    }
   }
 
   Widget _buildLoadingSkeleton() {
@@ -761,21 +990,82 @@ class MemoryFeedState extends State<MemoryFeed> with TickerProviderStateMixin {
                                     child: Row(
                                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                       children: [
-                                        Text(
-                                          dateStr.toUpperCase(),
-                                          style: AppTheme.labelCaps.copyWith(color: AppTheme.outline),
+                                        Row(
+                                          children: [
+                                            if (memory.isPinned) ...[
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(
+                                                  horizontal: 6,
+                                                  vertical: 2,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: AppTheme.secondary
+                                                      .withValues(alpha: 0.12),
+                                                  borderRadius:
+                                                      BorderRadius.circular(4),
+                                                ),
+                                                child: Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    const Icon(
+                                                      Icons.push_pin_rounded,
+                                                      size: 11,
+                                                      color: AppTheme.secondary,
+                                                    ),
+                                                    const SizedBox(width: 3),
+                                                    Text(
+                                                      'PINNED',
+                                                      style: AppTheme.labelCaps
+                                                          .copyWith(
+                                                            color: AppTheme
+                                                                .secondary,
+                                                            fontSize: 9.5,
+                                                            fontWeight:
+                                                                FontWeight.w700,
+                                                          ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                            ],
+                                            Text(
+                                              dateStr.toUpperCase(),
+                                              style: AppTheme.labelCaps.copyWith(
+                                                color: AppTheme.outline,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                         PopupMenuButton<String>(
                                           icon: const Icon(Icons.more_horiz, color: AppTheme.outline),
                                           onSelected: (val) {
                                             if (val == 'edit') {
                                               _editMemory(memory);
+                                            } else if (val == 'pin') {
+                                              _togglePin(memory);
                                             } else if (val == 'delete') {
                                               _deleteMemory(memory);
                                             }
                                           },
-                                          itemBuilder: (_) => const [
+                                          itemBuilder: (_) => [
                                             PopupMenuItem(
+                                              value: 'pin',
+                                              child: Row(
+                                                children: [
+                                                  Icon(
+                                                    memory.isPinned
+                                                        ? Icons.push_pin_outlined
+                                                        : Icons.push_pin_rounded,
+                                                    size: 18,
+                                                    color: AppTheme.secondary,
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  Text(memory.isPinned ? 'Unpin' : 'Pin to top'),
+                                                ],
+                                              ),
+                                            ),
+                                            const PopupMenuItem(
                                               value: 'edit',
                                               child: Row(
                                                 children: [
@@ -785,7 +1075,7 @@ class MemoryFeedState extends State<MemoryFeed> with TickerProviderStateMixin {
                                                 ],
                                               ),
                                             ),
-                                            PopupMenuItem(
+                                            const PopupMenuItem(
                                               value: 'delete',
                                               child: Row(
                                                 children: [

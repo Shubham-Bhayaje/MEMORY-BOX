@@ -7,6 +7,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:local_auth/local_auth.dart';
 import '../theme/app_theme.dart';
 import '../database/db_helper.dart';
 import 'memory_feed.dart';
@@ -30,8 +31,12 @@ class _HomeScreenState extends State<HomeScreen>
   final GlobalKey<FloatingAssistantOverlayState> _assistantKey =
       GlobalKey<FloatingAssistantOverlayState>();
   final DBHelper _dbHelper = DBHelper();
+  final LocalAuthentication _localAuth = LocalAuthentication();
   late AnimationController _fabController;
   bool _systemOverlayEnabled = false;
+  bool _isLocked = false;
+  bool _biometricEnabled = false;
+  bool _isAuthenticating = false;
 
   @override
   void initState() {
@@ -46,14 +51,64 @@ class _HomeScreenState extends State<HomeScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _refreshOverlayState();
       _checkAndProcessPendingOverlayAction();
+      _checkInitialBiometricLock();
     });
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      if (_biometricEnabled) {
+        setState(() => _isLocked = true);
+      }
+    } else if (state == AppLifecycleState.resumed) {
       _refreshOverlayState();
       _checkAndProcessPendingOverlayAction();
+      _checkBiometricOnResume();
+    }
+  }
+
+  Future<void> _checkInitialBiometricLock() async {
+    try {
+      final enabled = await _dbHelper.getBiometricLockEnabled();
+      _biometricEnabled = enabled;
+      if (enabled && mounted) {
+        setState(() => _isLocked = true);
+        _authenticateBiometrics();
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _checkBiometricOnResume() async {
+    try {
+      final enabled = await _dbHelper.getBiometricLockEnabled();
+      _biometricEnabled = enabled;
+      if (enabled && _isLocked && !_isAuthenticating) {
+        _authenticateBiometrics();
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _authenticateBiometrics() async {
+    if (_isAuthenticating) return;
+    _isAuthenticating = true;
+    try {
+      final authenticated = await _localAuth.authenticate(
+        localizedReason: 'Unlock your Memory Box vault',
+        options: const AuthenticationOptions(
+          stickyAuth: true,
+          biometricOnly: false,
+        ),
+      );
+      if (authenticated && mounted) {
+        setState(() {
+          _isLocked = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Biometric authentication error: $e');
+    } finally {
+      _isAuthenticating = false;
     }
   }
 
@@ -323,7 +378,134 @@ class _HomeScreenState extends State<HomeScreen>
             },
           ),
         ),
+        if (_isLocked)
+          Positioned.fill(
+            child: _buildLockGate(),
+          ),
       ],
+    );
+  }
+
+  Widget _buildLockGate() {
+    return Scaffold(
+      backgroundColor: AppTheme.surface,
+      body: Stack(
+        children: [
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0xFFEDE9FE),
+                  Color(0xFFF7F9FB),
+                  Color(0xFFECEEF0),
+                ],
+              ),
+            ),
+          ),
+          SafeArea(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 88,
+                      height: 88,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppTheme.secondary.withValues(alpha: 0.25),
+                            blurRadius: 28,
+                            offset: const Offset(0, 10),
+                          ),
+                        ],
+                      ),
+                      child: Image.asset(
+                        'assets/images/logo.png',
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Text(
+                      'Memory Box',
+                      style: GoogleFonts.inter(
+                        fontSize: 26,
+                        fontWeight: FontWeight.w800,
+                        color: AppTheme.primary,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTheme.secondary.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(100),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.lock_rounded,
+                            size: 14,
+                            color: AppTheme.secondary,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'VAULT LOCKED',
+                            style: AppTheme.labelCaps.copyWith(
+                              color: AppTheme.secondary,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Your personal second brain is secured with biometric protection.',
+                      textAlign: TextAlign.center,
+                      style: AppTheme.bodyMd.copyWith(
+                        color: AppTheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 36),
+                    ElevatedButton.icon(
+                      onPressed: _authenticateBiometrics,
+                      icon: const Icon(Icons.fingerprint_rounded, size: 24),
+                      label: const Text('Unlock Vault'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 32,
+                          vertical: 16,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(
+                            AppTheme.radiusFull,
+                          ),
+                        ),
+                        elevation: 4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

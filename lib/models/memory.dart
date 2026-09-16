@@ -55,6 +55,7 @@ class Memory {
   final AIAnalysis? aiAnalysis;
   final List<String> tags;
   final DateTime createdAt;
+  final bool isPinned;
 
   Memory({
     required this.id,
@@ -65,6 +66,7 @@ class Memory {
     this.aiAnalysis,
     required this.tags,
     required this.createdAt,
+    this.isPinned = false,
   });
 
   /// Returns all media file paths for this memory.
@@ -84,6 +86,30 @@ class Memory {
   /// Whether this memory contains more than one media attachment.
   bool get hasMultipleMedia => mediaPaths.length > 1;
 
+  Memory copyWith({
+    String? id,
+    MemoryType? type,
+    String? title,
+    String? content,
+    String? mediaPath,
+    AIAnalysis? aiAnalysis,
+    List<String>? tags,
+    DateTime? createdAt,
+    bool? isPinned,
+  }) {
+    return Memory(
+      id: id ?? this.id,
+      type: type ?? this.type,
+      title: title ?? this.title,
+      content: content ?? this.content,
+      mediaPath: mediaPath ?? this.mediaPath,
+      aiAnalysis: aiAnalysis ?? this.aiAnalysis,
+      tags: tags ?? this.tags,
+      createdAt: createdAt ?? this.createdAt,
+      isPinned: isPinned ?? this.isPinned,
+    );
+  }
+
   Map<String, dynamic> toMap() {
     return {
       'id': id,
@@ -94,6 +120,7 @@ class Memory {
       'ai_analysis': aiAnalysis?.toJson(),
       'tags': tags.join(','),
       'created_at': createdAt.toIso8601String(),
+      'is_pinned': isPinned ? 1 : 0,
     };
   }
 
@@ -112,6 +139,7 @@ class Memory {
           : null,
       tags: tagsStr.isEmpty ? [] : tagsStr.split(','),
       createdAt: DateTime.parse(map['created_at']),
+      isPinned: map['is_pinned'] == 1 || map['is_pinned'] == true,
     );
   }
 }
