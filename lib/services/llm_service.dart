@@ -246,6 +246,115 @@ class LLMService {
     }
   }
 
+  // --- TEXT NOTE AI ENHANCEMENT ---
+  Future<AIAnalysis> enhanceTextNote(String text, {String? title}) async {
+    await _checkRateLimit('text_enhance');
+    final settings = await _getSettings();
+    final provider = settings['provider'] ?? 'github';
+    final apiKey = settings['api_key'] ?? '';
+    final customEndpoint = settings['api_endpoint'] ?? '';
+    final modelName = settings['model_name'] ?? '';
+
+    final systemPrompt = '''
+You are a smart note assistant for a personal memory box app.
+The user has written a text note and wants AI-powered enhancement.
+Analyze the note and return raw JSON (no markdown fences) matching this schema exactly:
+{
+  "title": "A concise, descriptive title for this note (max 6 words)",
+  "description": "A brief 1-2 sentence summary of the note's key points",
+  "extracted_text": "",
+  "extracted_urls": [],
+  "tags": ["3 to 5 relevant lowercase tags, e.g., 'ideas', 'meeting', 'todo', 'work', 'learning'"]
+}
+
+Rules:
+- The title must capture the core topic, not be generic like "My Note" or "Untitled".
+- The description should summarize key takeaways concisely.
+- Tags should be specific and helpful for later search and recall.
+- extracted_text should be empty string for text notes.
+- extracted_urls should list any URLs found in the text, or be empty array.
+- Return ONLY valid raw JSON. No explanation, no markdown.
+''';
+
+    final userQuery = title != null && title.trim().isNotEmpty
+        ? 'Title: $title\n\nNote content:\n$text'
+        : 'Note content:\n$text';
+
+    String rawResponse;
+    switch (provider) {
+      case 'github':
+        rawResponse = await _chatOpenAIStyle(
+          systemPrompt, userQuery, apiKey, customEndpoint, modelName,
+        );
+        break;
+      case 'openai':
+        rawResponse = await _chatOpenAIStyle(
+          systemPrompt, userQuery, apiKey, 'https://api.openai.com/v1', modelName,
+        );
+        break;
+      case 'gemini':
+        rawResponse = await _chatGemini(systemPrompt, userQuery, apiKey, modelName);
+        break;
+      case 'claude':
+        rawResponse = await _chatClaude(systemPrompt, userQuery, apiKey, modelName);
+        break;
+      case 'huggingface':
+        rawResponse = await _chatOpenAIStyle(
+          systemPrompt,
+          userQuery,
+          apiKey,
+          customEndpoint.isNotEmpty
+              ? customEndpoint
+              : 'https://router.huggingface.co/v1',
+          modelName.isNotEmpty
+              ? modelName
+              : 'meta-llama/Llama-3.3-70B-Instruct',
+        );
+        break;
+      case 'local':
+      default:
+        final localBaseUrl = customEndpoint.isNotEmpty
+            ? customEndpoint
+            : 'http://localhost:11434';
+        rawResponse = await _chatOpenAIStyle(
+          systemPrompt, userQuery, '', '$localBaseUrl/v1',
+          modelName.isNotEmpty ? modelName : 'gemma:2b',
+        );
+    }
+
+    // Parse JSON from response, stripping any markdown fences
+    var cleaned = rawResponse.trim();
+    if (cleaned.startsWith('```json')) {
+      cleaned = cleaned.substring(7);
+    } else if (cleaned.startsWith('```')) {
+      cleaned = cleaned.substring(3);
+    }
+    if (cleaned.endsWith('```')) {
+      cleaned = cleaned.substring(0, cleaned.length - 3);
+    }
+    cleaned = cleaned.trim();
+
+    try {
+      final map = json.decode(cleaned) as Map<String, dynamic>;
+      return AIAnalysis(
+        description: map['description'] ?? map['title'] ?? '',
+        extractedText: map['extracted_text'] ?? '',
+        extractedUrls: List<String>.from(map['extracted_urls'] ?? []),
+        tags: List<String>.from(map['tags'] ?? []),
+      );
+    } catch (e) {
+      // If JSON parsing fails, return a basic analysis from raw text
+      return AIAnalysis(
+        description: rawResponse.length > 200
+            ? '${rawResponse.substring(0, 200)}...'
+            : rawResponse,
+        extractedText: '',
+        extractedUrls: [],
+        tags: [],
+      );
+    }
+  }
+
   // --- SPEECH TO TEXT: TRANSCRIBE AUDIO ---
   Future<String> transcribeAudio(File audioFile) async {
     await _checkRateLimit('transcription');

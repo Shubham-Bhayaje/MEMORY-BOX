@@ -67,6 +67,23 @@ class Memory {
     required this.createdAt,
   });
 
+  /// Returns all media file paths for this memory.
+  /// Supports pipe-separated multiple paths (`path1|path2`) as well as single paths.
+  List<String> get mediaPaths {
+    if (mediaPath == null || mediaPath!.trim().isEmpty) return [];
+    if (mediaPath!.contains('|')) {
+      return mediaPath!
+          .split('|')
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+    }
+    return [mediaPath!];
+  }
+
+  /// Whether this memory contains more than one media attachment.
+  bool get hasMultipleMedia => mediaPaths.length > 1;
+
   Map<String, dynamic> toMap() {
     return {
       'id': id,

@@ -75,4 +75,80 @@ void main() {
       expect(deserialized.tags, isEmpty);
     });
   });
+
+  group('Memory mediaPaths Tests', () {
+    test('Single media path returns list with one element', () {
+      final memory = Memory(
+        id: 'single',
+        type: MemoryType.photo,
+        title: 'Single Photo',
+        content: '',
+        mediaPath: '/path/to/photo.jpg',
+        tags: [],
+        createdAt: DateTime.now(),
+      );
+
+      expect(memory.mediaPaths, ['/path/to/photo.jpg']);
+      expect(memory.hasMultipleMedia, isFalse);
+    });
+
+    test('Pipe-delimited paths return multiple elements', () {
+      final memory = Memory(
+        id: 'multi',
+        type: MemoryType.photo,
+        title: 'Multi Photo',
+        content: '',
+        mediaPath: '/path/photo1.jpg|/path/photo2.jpg|/path/photo3.jpg',
+        tags: [],
+        createdAt: DateTime.now(),
+      );
+
+      expect(memory.mediaPaths, ['/path/photo1.jpg', '/path/photo2.jpg', '/path/photo3.jpg']);
+      expect(memory.hasMultipleMedia, isTrue);
+    });
+
+    test('Null mediaPath returns empty list', () {
+      final memory = Memory(
+        id: 'null-media',
+        type: MemoryType.text,
+        title: 'Text Note',
+        content: 'Some text',
+        mediaPath: null,
+        tags: [],
+        createdAt: DateTime.now(),
+      );
+
+      expect(memory.mediaPaths, isEmpty);
+      expect(memory.hasMultipleMedia, isFalse);
+    });
+
+    test('Empty string mediaPath returns empty list', () {
+      final memory = Memory(
+        id: 'empty-media',
+        type: MemoryType.text,
+        title: 'Empty media',
+        content: '',
+        mediaPath: '',
+        tags: [],
+        createdAt: DateTime.now(),
+      );
+
+      expect(memory.mediaPaths, isEmpty);
+      expect(memory.hasMultipleMedia, isFalse);
+    });
+
+    test('Pipe-delimited paths with whitespace are trimmed', () {
+      final memory = Memory(
+        id: 'spaces',
+        type: MemoryType.photo,
+        title: 'Spaced paths',
+        content: '',
+        mediaPath: ' /a.jpg | /b.jpg ',
+        tags: [],
+        createdAt: DateTime.now(),
+      );
+
+      expect(memory.mediaPaths, ['/a.jpg', '/b.jpg']);
+    });
+  });
 }

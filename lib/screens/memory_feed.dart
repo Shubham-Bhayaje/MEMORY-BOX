@@ -803,35 +803,48 @@ class MemoryFeedState extends State<MemoryFeed> with TickerProviderStateMixin {
                                   if (hasImage)
                                     Padding(
                                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                      child: Stack(
-                                        children: [
-                                          ClipRRect(
-                                            borderRadius: BorderRadius.circular(8),
-                                            child: Image.file(
-                                              File(memory.mediaPath!),
-                                              width: double.infinity,
-                                              height: 200,
-                                              fit: BoxFit.cover,
-                                              errorBuilder: (_, __, ___) => Container(
-                                                height: 96,
-                                                color: AppTheme.surfaceContainer,
-                                                child: const Center(
-                                                  child: Icon(Icons.broken_image_rounded, color: AppTheme.outline),
+                                      child: Builder(
+                                        builder: (context) {
+                                          final paths = memory.mediaPaths;
+                                          if (paths.length <= 1) {
+                                            // Single image — same as before
+                                            return Stack(
+                                              children: [
+                                                ClipRRect(
+                                                  borderRadius: BorderRadius.circular(8),
+                                                  child: Image.file(
+                                                    File(paths.first),
+                                                    width: double.infinity,
+                                                    height: 200,
+                                                    fit: BoxFit.cover,
+                                                    errorBuilder: (_, __, ___) => Container(
+                                                      height: 96,
+                                                      color: AppTheme.surfaceContainer,
+                                                      child: const Center(
+                                                        child: Icon(Icons.broken_image_rounded, color: AppTheme.outline),
+                                                      ),
+                                                    ),
+                                                  ),
                                                 ),
-                                              ),
-                                            ),
-                                          ),
-                                          if (memory.aiAnalysis != null && memory.aiAnalysis!.description.isNotEmpty)
-                                            Positioned(
-                                              top: 8,
-                                              right: 8,
-                                              child: AppTheme.glassContainer(
-                                                padding: const EdgeInsets.all(8),
-                                                radius: 999,
-                                                child: const Icon(Icons.auto_awesome, color: AppTheme.secondary, size: 18),
-                                              ),
-                                            ),
-                                        ],
+                                                if (memory.aiAnalysis != null && memory.aiAnalysis!.description.isNotEmpty)
+                                                  Positioned(
+                                                    top: 8,
+                                                    right: 8,
+                                                    child: AppTheme.glassContainer(
+                                                      padding: const EdgeInsets.all(8),
+                                                      radius: 999,
+                                                      child: const Icon(Icons.auto_awesome, color: AppTheme.secondary, size: 18),
+                                                    ),
+                                                  ),
+                                              ],
+                                            );
+                                          }
+                                          // Multi-photo carousel
+                                          return _MultiPhotoCarousel(
+                                            paths: paths,
+                                            hasAiAnalysis: memory.aiAnalysis != null && memory.aiAnalysis!.description.isNotEmpty,
+                                          );
+                                        },
                                       ),
                                     ),
                                   if (memory.type == MemoryType.voice && memory.mediaPath != null)
@@ -964,6 +977,104 @@ class MemoryFeedState extends State<MemoryFeed> with TickerProviderStateMixin {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Swipeable multi-photo carousel used inside memory feed cards.
+class _MultiPhotoCarousel extends StatefulWidget {
+  final List<String> paths;
+  final bool hasAiAnalysis;
+
+  const _MultiPhotoCarousel({
+    required this.paths,
+    required this.hasAiAnalysis,
+  });
+
+  @override
+  State<_MultiPhotoCarousel> createState() => _MultiPhotoCarouselState();
+}
+
+class _MultiPhotoCarouselState extends State<_MultiPhotoCarousel> {
+  int _currentPage = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Stack(
+          children: [
+            SizedBox(
+              height: 200,
+              child: PageView.builder(
+                itemCount: widget.paths.length,
+                onPageChanged: (i) => setState(() => _currentPage = i),
+                itemBuilder: (context, index) {
+                  return ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.file(
+                      File(widget.paths[index]),
+                      width: double.infinity,
+                      height: 200,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        height: 96,
+                        color: AppTheme.surfaceContainer,
+                        child: const Center(
+                          child: Icon(Icons.broken_image_rounded, color: AppTheme.outline),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            // Counter badge
+            Positioned(
+              top: 8,
+              left: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '${_currentPage + 1}/${widget.paths.length}',
+                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+            if (widget.hasAiAnalysis)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: AppTheme.glassContainer(
+                  padding: const EdgeInsets.all(8),
+                  radius: 999,
+                  child: const Icon(Icons.auto_awesome, color: AppTheme.secondary, size: 18),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        // Dot indicators
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(widget.paths.length, (index) {
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              margin: const EdgeInsets.symmetric(horizontal: 3),
+              width: _currentPage == index ? 16 : 6,
+              height: 6,
+              decoration: BoxDecoration(
+                color: _currentPage == index ? AppTheme.primary : AppTheme.outlineVariant,
+                borderRadius: BorderRadius.circular(3),
+              ),
+            );
+          }),
+        ),
+      ],
     );
   }
 }

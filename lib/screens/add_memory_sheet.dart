@@ -41,11 +41,12 @@ class _AddMemorySheetState extends State<AddMemorySheet>
   final stt.SpeechToText _speechToText = stt.SpeechToText();
 
   String _selectedType = 'text';
-  File? _selectedImage;
+  List<File> _selectedImages = [];
   String? _voicePath;
   bool _isRecording = false;
   bool _isAnalyzing = false;
   bool _isTranscribing = false;
+  bool _isEnhancingText = false;
   bool _isSaving = false;
   AIAnalysis? _aiAnalysis;
   List<String> _tags = [];
@@ -102,10 +103,10 @@ class _AddMemorySheetState extends State<AddMemorySheet>
     } else if ((memory.type == MemoryType.photo ||
             memory.type == MemoryType.screenshot) &&
         memory.mediaPath != null) {
-      final file = File(memory.mediaPath!);
-      if (file.existsSync()) {
-        _selectedImage = file;
-      }
+      _selectedImages = memory.mediaPaths
+          .map((p) => File(p))
+          .where((f) => f.existsSync())
+          .toList();
     }
   }
 
@@ -134,25 +135,48 @@ class _AddMemorySheetState extends State<AddMemorySheet>
 
   Future<void> _pickImage(ImageSource source) async {
     try {
-      final picked = await _imagePicker.pickImage(
-        source: source,
-        maxWidth: 1920,
-        imageQuality: 85,
-      );
-      if (picked == null || !mounted) return;
-      final pathLower = picked.path.toLowerCase();
-      final isScreenshotFile = pathLower.contains('screenshot') ||
-          pathLower.contains('screencap') ||
-          pathLower.contains('screen_shot') ||
-          pathLower.contains('screen-shot');
+      if (source == ImageSource.gallery) {
+        // Multi-select from gallery
+        final pickedList = await _imagePicker.pickMultiImage(
+          maxWidth: 1920,
+          imageQuality: 85,
+        );
+        if (pickedList.isEmpty || !mounted) return;
 
-      setState(() {
-        _selectedImage = File(picked.path);
-        if (_selectedType == 'photo' && isScreenshotFile) {
-          _selectedType = 'screenshot';
+        bool hasScreenshot = false;
+        final newFiles = <File>[];
+        for (final picked in pickedList) {
+          final pathLower = picked.path.toLowerCase();
+          if (pathLower.contains('screenshot') ||
+              pathLower.contains('screencap') ||
+              pathLower.contains('screen_shot') ||
+              pathLower.contains('screen-shot')) {
+            hasScreenshot = true;
+          }
+          newFiles.add(File(picked.path));
         }
-        _aiAnalysis = null;
-      });
+
+        setState(() {
+          _selectedImages.addAll(newFiles);
+          if (_selectedType == 'photo' && hasScreenshot) {
+            _selectedType = 'screenshot';
+          }
+          _aiAnalysis = null;
+        });
+      } else {
+        // Single capture from camera
+        final picked = await _imagePicker.pickImage(
+          source: source,
+          maxWidth: 1920,
+          imageQuality: 85,
+        );
+        if (picked == null || !mounted) return;
+
+        setState(() {
+          _selectedImages.add(File(picked.path));
+          _aiAnalysis = null;
+        });
+      }
     } catch (e) {
       if (!mounted) return;
       ErrorHandler.showErrorSnackBar(
@@ -163,13 +187,13 @@ class _AddMemorySheetState extends State<AddMemorySheet>
   }
 
   Future<void> _analyzeImage() async {
-    if (_selectedImage == null || _isAnalyzing) return;
+    if (_selectedImages.isEmpty || _isAnalyzing) return;
 
     setState(() => _isAnalyzing = true);
     _pulseController.repeat(reverse: true);
     try {
       final analysis = await _llmService.analyzeImage(
-        _selectedImage!,
+        _selectedImages.first,
         _selectedType,
       );
       if (!mounted) return;
@@ -347,10 +371,10 @@ class _AddMemorySheetState extends State<AddMemorySheet>
       _selectedType = type;
       _aiAnalysis = null;
       if (type == 'text') {
-        _selectedImage = null;
+        _selectedImages.clear();
         _voicePath = null;
       } else if (type == 'voice') {
-        _selectedImage = null;
+        _selectedImages.clear();
       } else {
         _voicePath = null;
       }
@@ -373,7 +397,7 @@ class _AddMemorySheetState extends State<AddMemorySheet>
   Future<void> _saveMemory() async {
     final title = InputValidator.sanitizeTitle(_titleController.text);
     final content = InputValidator.sanitizeContent(_contentController.text);
-    final hasMedia = _selectedImage != null || _voicePath != null;
+    final hasMedia = _selectedImages.isNotEmpty || _voicePath != null;
 
     if (title.trim().isEmpty && content.trim().isEmpty && !hasMedia) {
       _showSnack('Add text, media, or a recording before saving.');
@@ -384,8 +408,12 @@ class _AddMemorySheetState extends State<AddMemorySheet>
 
     try {
       String? savedMediaPath;
-      if (_selectedImage != null) {
-        savedMediaPath = await _copyImageToAppDirectory(_selectedImage!);
+      if (_selectedImages.isNotEmpty) {
+        final savedPaths = <String>[];
+        for (final img in _selectedImages) {
+          savedPaths.add(await _copyImageToAppDirectory(img));
+        }
+        savedMediaPath = savedPaths.join('|');
       } else if (_voicePath != null) {
         final file = File(_voicePath!);
         if (await file.exists()) {
@@ -665,48 +693,118 @@ class _AddMemorySheetState extends State<AddMemorySheet>
 
   Widget _buildTextInput() {
     final isFocused = _contentFocusNode.hasFocus;
-    return Stack(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Container(
-          constraints: const BoxConstraints(minHeight: 128),
-          decoration: BoxDecoration(
-            color: isFocused ? AppTheme.surfaceContainerLowest : AppTheme.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(12),
-            border: Border(
-              bottom: BorderSide(
-                color: isFocused ? AppTheme.secondary : Colors.transparent,
-                width: 2,
+        Stack(
+          children: [
+            Container(
+              constraints: const BoxConstraints(minHeight: 128),
+              decoration: BoxDecoration(
+                color: isFocused ? AppTheme.surfaceContainerLowest : AppTheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(12),
+                border: Border(
+                  bottom: BorderSide(
+                    color: isFocused ? AppTheme.secondary : Colors.transparent,
+                    width: 2,
+                  ),
+                ),
+              ),
+              padding: const EdgeInsets.all(16),
+              child: TextField(
+                controller: _contentController,
+                focusNode: _contentFocusNode,
+                minLines: 5,
+                maxLines: null,
+                style: AppTheme.bodyMd,
+                decoration: InputDecoration(
+                  hintText: 'What\'s on your mind?',
+                  hintStyle: AppTheme.bodyMd.copyWith(
+                    color: AppTheme.onSurfaceVariant.withOpacity(0.5),
+                  ),
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  filled: false,
+                  contentPadding: EdgeInsets.zero,
+                ),
               ),
             ),
-          ),
-          padding: const EdgeInsets.all(16),
-          child: TextField(
-            controller: _contentController,
-            focusNode: _contentFocusNode,
-            minLines: 5,
-            maxLines: null,
-            style: AppTheme.bodyMd,
-            decoration: InputDecoration(
-              hintText: 'What\'s on your mind?',
-              hintStyle: AppTheme.bodyMd.copyWith(
-                color: AppTheme.onSurfaceVariant.withOpacity(0.5),
+            if (_isEnhancingText)
+              Positioned(
+                bottom: 12,
+                right: 12,
+                child: _buildAnalyzingBadge(),
               ),
-              border: InputBorder.none,
-              enabledBorder: InputBorder.none,
-              focusedBorder: InputBorder.none,
-              filled: false,
-              contentPadding: EdgeInsets.zero,
-            ),
-          ),
+          ],
         ),
-        if (_isAnalyzing)
-          Positioned(
-            bottom: 12,
-            right: 12,
-            child: _buildAnalyzingBadge(),
+        const SizedBox(height: 12),
+        if (!_isEnhancingText && _aiAnalysis == null)
+          ElevatedButton.icon(
+            onPressed: _contentController.text.trim().length < 3
+                ? null
+                : _enhanceTextNote,
+            icon: const Icon(Icons.auto_awesome, size: 18),
+            label: const Text('AI Assist'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.secondary,
+              foregroundColor: Colors.white,
+              disabledBackgroundColor: AppTheme.surfaceContainerHigh,
+              disabledForegroundColor: AppTheme.outline,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
           ),
+        if (_aiAnalysis != null) ...[
+          const SizedBox(height: 12),
+          _buildAIResultCard(),
+        ],
       ],
     );
+  }
+
+  Future<void> _enhanceTextNote() async {
+    final text = _contentController.text.trim();
+    if (text.isEmpty || _isEnhancingText) return;
+
+    setState(() => _isEnhancingText = true);
+    _pulseController.repeat(reverse: true);
+    try {
+      final analysis = await _llmService.enhanceTextNote(
+        text,
+        title: _titleController.text.trim(),
+      );
+      if (!mounted) return;
+      setState(() {
+        _aiAnalysis = analysis;
+        // Auto-fill title if empty and AI returned something useful
+        if (_titleController.text.trim().isEmpty &&
+            analysis.description.isNotEmpty) {
+          _titleController.text = _compactTitle(analysis.description);
+        }
+        // Merge AI-suggested tags
+        for (final tag in analysis.tags) {
+          final clean = InputValidator.sanitizeTag(tag);
+          if (clean.isNotEmpty && !_tags.contains(clean)) {
+            _tags.add(clean);
+          }
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ErrorHandler.showErrorSnackBar(
+        context,
+        message: ErrorHandler.getUserMessage(e),
+        onRetry: _enhanceTextNote,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isEnhancingText = false);
+        if (!_isRecording && !_isAnalyzing) _pulseController.stop();
+      }
+    }
   }
 
   Widget _buildAnalyzingBadge() {
@@ -866,13 +964,14 @@ class _AddMemorySheetState extends State<AddMemorySheet>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (_selectedImage != null) ...[
+        if (_selectedImages.isNotEmpty) ...[
+          // Primary image preview (first image)
           Stack(
             children: [
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: Image.file(
-                  _selectedImage!,
+                  _selectedImages.first,
                   height: 240,
                   width: double.infinity,
                   fit: BoxFit.cover,
@@ -895,23 +994,97 @@ class _AddMemorySheetState extends State<AddMemorySheet>
                   right: 12,
                   child: _buildAnalyzingBadge(),
                 ),
+              // Photo count badge
+              if (_selectedImages.length > 1)
+                Positioned(
+                  top: 10,
+                  left: 10,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '${_selectedImages.length} photos',
+                      style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
             ],
           ),
+          // Thumbnail strip for multiple images
+          if (_selectedImages.length > 1) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 72,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: _selectedImages.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (context, index) {
+                  return Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.file(
+                          _selectedImages[index],
+                          width: 72,
+                          height: 72,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            width: 72,
+                            height: 72,
+                            color: AppTheme.surfaceContainerLow,
+                            child: const Icon(Icons.broken_image, size: 20, color: AppTheme.outline),
+                          ),
+                        ),
+                      ),
+                      // Remove button
+                      Positioned(
+                        top: -6,
+                        right: -6,
+                        child: GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _selectedImages.removeAt(index);
+                              _aiAnalysis = null;
+                            });
+                          },
+                          child: Container(
+                            width: 22,
+                            height: 22,
+                            decoration: BoxDecoration(
+                              color: AppTheme.error,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 1.5),
+                            ),
+                            child: const Icon(Icons.close, size: 12, color: Colors.white),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           Row(
             children: [
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: () => _pickImage(ImageSource.gallery),
-                  icon: const Icon(Icons.photo_library),
-                  label: const Text('Gallery'),
+                  icon: const Icon(Icons.add_photo_alternate, size: 18),
+                  label: const Text('Add More'),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: () => _pickImage(ImageSource.camera),
-                  icon: const Icon(Icons.camera_alt),
+                  icon: const Icon(Icons.camera_alt, size: 18),
                   label: const Text('Camera'),
                 ),
               ),
