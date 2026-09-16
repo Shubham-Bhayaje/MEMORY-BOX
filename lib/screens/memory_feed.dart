@@ -986,58 +986,69 @@ class MemoryFeedState extends State<MemoryFeed> with TickerProviderStateMixin {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Padding(
-                                    padding: const EdgeInsets.fromLTRB(16, 12, 8, 0),
+                                    padding: const EdgeInsets.fromLTRB(16, 12, 4, 0),
                                     child: Row(
                                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                       children: [
-                                        Row(
-                                          children: [
-                                            if (memory.isPinned) ...[
-                                              Container(
-                                                padding: const EdgeInsets.symmetric(
-                                                  horizontal: 6,
-                                                  vertical: 2,
+                                        Expanded(
+                                          child: Row(
+                                            children: [
+                                              if (memory.isPinned) ...[
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(
+                                                    horizontal: 6,
+                                                    vertical: 2,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: AppTheme.secondary
+                                                        .withValues(alpha: 0.12),
+                                                    borderRadius:
+                                                        BorderRadius.circular(4),
+                                                  ),
+                                                  child: Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      const Icon(
+                                                        Icons.push_pin_rounded,
+                                                        size: 11,
+                                                        color: AppTheme.secondary,
+                                                      ),
+                                                      const SizedBox(width: 3),
+                                                      Text(
+                                                        'PINNED',
+                                                        style: AppTheme.labelCaps
+                                                            .copyWith(
+                                                              color: AppTheme
+                                                                  .secondary,
+                                                              fontSize: 9.5,
+                                                              fontWeight:
+                                                                  FontWeight.w700,
+                                                            ),
+                                                      ),
+                                                    ],
+                                                  ),
                                                 ),
-                                                decoration: BoxDecoration(
-                                                  color: AppTheme.secondary
-                                                      .withValues(alpha: 0.12),
-                                                  borderRadius:
-                                                      BorderRadius.circular(4),
-                                                ),
-                                                child: Row(
-                                                  mainAxisSize: MainAxisSize.min,
-                                                  children: [
-                                                    const Icon(
-                                                      Icons.push_pin_rounded,
-                                                      size: 11,
-                                                      color: AppTheme.secondary,
-                                                    ),
-                                                    const SizedBox(width: 3),
-                                                    Text(
-                                                      'PINNED',
-                                                      style: AppTheme.labelCaps
-                                                          .copyWith(
-                                                            color: AppTheme
-                                                                .secondary,
-                                                            fontSize: 9.5,
-                                                            fontWeight:
-                                                                FontWeight.w700,
-                                                          ),
-                                                    ),
-                                                  ],
+                                                const SizedBox(width: 8),
+                                              ],
+                                              Flexible(
+                                                child: Text(
+                                                  dateStr.toUpperCase(),
+                                                  style: AppTheme.labelCaps.copyWith(
+                                                    color: AppTheme.outline,
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
                                                 ),
                                               ),
-                                              const SizedBox(width: 8),
                                             ],
-                                            Text(
-                                              dateStr.toUpperCase(),
-                                              style: AppTheme.labelCaps.copyWith(
-                                                color: AppTheme.outline,
-                                              ),
-                                            ),
-                                          ],
+                                          ),
                                         ),
                                         PopupMenuButton<String>(
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(
+                                            minWidth: 32,
+                                            minHeight: 32,
+                                          ),
                                           icon: const Icon(Icons.more_horiz, color: AppTheme.outline),
                                           onSelected: (val) {
                                             if (val == 'edit') {
