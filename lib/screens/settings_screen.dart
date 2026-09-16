@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../database/db_helper.dart';
 import '../theme/app_theme.dart';
 import '../utils/error_handler.dart';
@@ -680,18 +681,57 @@ class _SettingsScreenState extends State<SettingsScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Icon(Icons.psychology_rounded, size: 28, color: AppTheme.primary),
-              const SizedBox(width: 12),
-              Text(
-                'Intelligence Engine',
-                style: AppTheme.headlineMd.copyWith(fontSize: 22),
+              Row(
+                children: [
+                  const Icon(Icons.psychology_rounded, size: 28, color: AppTheme.primary),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Intelligence Engine',
+                    style: AppTheme.headlineMd.copyWith(fontSize: 22),
+                  ),
+                ],
+              ),
+              TextButton.icon(
+                onPressed: () => _showAiProviderHelpDialog(context),
+                icon: const Icon(Icons.help_outline_rounded, size: 16, color: AppTheme.primary),
+                label: const Text(
+                  'Setup Guide',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+                ),
+                style: TextButton.styleFrom(
+                  backgroundColor: AppTheme.primary.withValues(alpha: 0.08),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
               ),
             ],
           ),
           const SizedBox(height: 24),
           
-          _buildLabel('AI PROVIDER'),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _buildLabel('AI PROVIDER'),
+              InkWell(
+                onTap: () => _showAiProviderHelpDialog(context, initialProvider: _selectedProvider),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.menu_book_rounded, size: 13, color: AppTheme.secondary),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Provider Guide',
+                      style: AppTheme.labelCaps.copyWith(color: AppTheme.secondary),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
             value: _selectedProvider,
@@ -707,6 +747,57 @@ class _SettingsScreenState extends State<SettingsScreen>
               if (value != null) _selectProvider(value);
             },
           ),
+          if (_selectedProvider == 'local') ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF10B981).withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: const Color(0xFF10B981).withValues(alpha: 0.2),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.wifi_rounded, size: 20, color: Color(0xFF10B981)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'No API key needed!',
+                          style: AppTheme.bodyMd.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: const Color(0xFF047857),
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'To connect your phone to Ollama on your PC, set your PC\'s Wi-Fi IP in the endpoint.',
+                          style: AppTheme.bodyMd.copyWith(
+                            color: AppTheme.onSurfaceVariant,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => _showAiProviderHelpDialog(context, initialProvider: 'local'),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: const Text('Wi-Fi Guide', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 20),
 
           if (needsKey) ...[
@@ -714,12 +805,30 @@ class _SettingsScreenState extends State<SettingsScreen>
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 _buildLabel('API KEY'),
-                InkWell(
-                  onTap: () => _openGetKeyUrl(_selectedProvider),
-                  child: Text(
-                    'Get Key',
-                    style: AppTheme.labelCaps.copyWith(color: AppTheme.primary),
-                  ),
+                Row(
+                  children: [
+                    InkWell(
+                      onTap: () => _showAiProviderHelpDialog(context, initialProvider: _selectedProvider),
+                      child: Text(
+                        'Where to get key?',
+                        style: AppTheme.labelCaps.copyWith(color: AppTheme.outline),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    InkWell(
+                      onTap: () => _openGetKeyUrl(_selectedProvider),
+                      child: Row(
+                        children: [
+                          Text(
+                            'Get Key',
+                            style: AppTheme.labelCaps.copyWith(color: AppTheme.primary),
+                          ),
+                          const SizedBox(width: 2),
+                          const Icon(Icons.open_in_new_rounded, size: 11, color: AppTheme.primary),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -1094,6 +1203,32 @@ class _SettingsScreenState extends State<SettingsScreen>
     }
   }
 
+  void _showAiProviderHelpDialog(BuildContext context, {String? initialProvider}) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => AiProviderHelpSheet(
+        initialProvider: initialProvider ?? _selectedProvider,
+        onSelectProvider: (providerKey) {
+          Navigator.of(ctx).pop();
+          _selectProvider(providerKey);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Switched AI Provider to ${providerKey.toUpperCase()}'),
+              backgroundColor: AppTheme.primary,
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        },
+        onOpenPortal: (providerKey) {
+          _openGetKeyUrl(providerKey);
+        },
+      ),
+    );
+  }
+
   Future<void> _showDiagnosticsDialog() async {
     final memories = await _dbHelper.getMemories();
     final provider = _currentProvider;
@@ -1446,3 +1581,768 @@ class _SettingsScreenState extends State<SettingsScreen>
     }
   }
 }
+
+class ProviderGuide {
+  final String key;
+  final String name;
+  final String tag;
+  final Color color;
+  final IconData icon;
+  final String portalUrl;
+  final String portalButtonText;
+  final String summary;
+  final List<String> steps;
+  final String defaultModel;
+  final List<String> popularModels;
+  final String? mobileTip;
+  final bool isFree;
+
+  const ProviderGuide({
+    required this.key,
+    required this.name,
+    required this.tag,
+    required this.color,
+    required this.icon,
+    required this.portalUrl,
+    required this.portalButtonText,
+    required this.summary,
+    required this.steps,
+    required this.defaultModel,
+    required this.popularModels,
+    this.mobileTip,
+    required this.isFree,
+  });
+}
+
+class AiProviderHelpSheet extends StatefulWidget {
+  final String initialProvider;
+  final ValueChanged<String> onSelectProvider;
+  final ValueChanged<String> onOpenPortal;
+
+  const AiProviderHelpSheet({
+    required this.initialProvider,
+    required this.onSelectProvider,
+    required this.onOpenPortal,
+  });
+
+  @override
+  State<AiProviderHelpSheet> createState() => AiProviderHelpSheetState();
+}
+
+class AiProviderHelpSheetState extends State<AiProviderHelpSheet> {
+  late String _activeKey;
+
+  static const List<ProviderGuide> _guides = [
+    ProviderGuide(
+      key: 'github',
+      name: 'GitHub Models',
+      tag: 'Free with GitHub Account',
+      color: Color(0xFF6E40C9),
+      icon: Icons.code_rounded,
+      portalUrl: 'https://github.com/marketplace/models',
+      portalButtonText: 'Open GitHub Models Portal',
+      summary:
+          'Completely free with your existing GitHub account! Access GPT-4o-mini, Llama 3.1, and Mistral directly via a personal access token without a credit card.',
+      steps: [
+        'Sign in to your GitHub account (or create a free one at github.com).',
+        'Go to github.com/marketplace/models or Settings → Developer settings → Personal access tokens.',
+        'Generate a new personal token (Classic or Fine-grained) with default read permissions and copy it.',
+        'Paste your token (starts with github_pat_ or ghp_) into the API Key field in Memory Box.',
+        'Set Model Name to "openai/gpt-4o-mini" and tap "Test Connection" to verify.',
+      ],
+      defaultModel: 'openai/gpt-4o-mini',
+      popularModels: [
+        'openai/gpt-4o-mini',
+        'openai/gpt-4o',
+        'meta/meta-llama-3.1-70b-instruct',
+        'mistralai/mistral-large-2407',
+      ],
+      mobileTip:
+          'Ideal for mobile use: completely cloud-hosted, ultra-low latency, and requires zero PC setup.',
+      isFree: true,
+    ),
+    ProviderGuide(
+      key: 'gemini',
+      name: 'Google Gemini',
+      tag: 'Generous Free Tier',
+      color: Color(0xFF1A73E8),
+      icon: Icons.auto_awesome_rounded,
+      portalUrl: 'https://aistudio.google.com/app/apikey',
+      portalButtonText: 'Get Google AI Studio Key',
+      summary:
+          'Google’s premier multimodal intelligence. Generous free tier with up to 15 requests per minute, exceptional memory synthesis, and rapid responses.',
+      steps: [
+        'Visit Google AI Studio at aistudio.google.com and sign in with your Google account.',
+        'Click the blue "Get API key" button in the navigation bar.',
+        'Click "Create API key in new project" and copy your secret key.',
+        'Paste the key (starts with AIza...) into the API Key field in Memory Box.',
+        'Set model to "gemini-1.5-flash" and tap "Test Connection".',
+      ],
+      defaultModel: 'gemini-1.5-flash',
+      popularModels: [
+        'gemini-1.5-flash',
+        'gemini-1.5-pro',
+        'gemini-2.0-flash',
+      ],
+      mobileTip:
+          'Works reliably over mobile network or Wi-Fi. Perfect for photo recall and multimodal searches.',
+      isFree: true,
+    ),
+    ProviderGuide(
+      key: 'local',
+      name: 'Local Ollama',
+      tag: '100% Free & Private (Offline)',
+      color: Color(0xFF10B981),
+      icon: Icons.dns_rounded,
+      portalUrl: 'https://ollama.com',
+      portalButtonText: 'Download Ollama (PC/Mac/Linux)',
+      summary:
+          'Run cutting-edge open-source LLMs locally on your own computer. Zero subscriptions, complete data privacy, and works fully within your local home network.',
+      steps: [
+        'Download and install Ollama from ollama.com on your PC, Mac, or Linux machine.',
+        'Open terminal or PowerShell and run: ollama run llama3.2 (or mistral).',
+        'Allow phone Wi-Fi connections by setting the environment variable OLLAMA_HOST=0.0.0.0:11434 before launching Ollama (on Windows: set OLLAMA_HOST=0.0.0.0:11434 && ollama serve).',
+        'Find your computer’s local Wi-Fi IP address (run "ipconfig" on Windows or "ifconfig" on Mac/Linux to find your IPv4 like 192.168.1.15).',
+        'Connect your phone to the same Wi-Fi network as your computer.',
+        'In Memory Box API Endpoint, enter: http://<YOUR_PC_IP>:11434/v1 (e.g. http://192.168.1.15:11434/v1). API Key can be left blank.',
+      ],
+      defaultModel: 'llama3.2',
+      popularModels: [
+        'llama3.2',
+        'mistral',
+        'qwen2.5',
+        'phi3',
+      ],
+      mobileTip:
+          'IMPORTANT FOR PHONES: Do NOT use "localhost" or "127.0.0.1" on your phone — on mobile, localhost points to the phone itself, not your PC! You must use your PC\'s Wi-Fi IP (e.g. 192.168.x.x).',
+      isFree: true,
+    ),
+    ProviderGuide(
+      key: 'openai',
+      name: 'OpenAI',
+      tag: 'Industry Standard (Paid)',
+      color: Color(0xFF10A37F),
+      icon: Icons.psychology_rounded,
+      portalUrl: 'https://platform.openai.com/api-keys',
+      portalButtonText: 'OpenAI API Keys Dashboard',
+      summary:
+          'The creators of ChatGPT and GPT-4o. State-of-the-art conversational reasoning, contextual recall, and native Whisper speech-to-text integration.',
+      steps: [
+        'Sign in to platform.openai.com (note: platform API is separate from ChatGPT Plus).',
+        'Go to Settings → Billing and add prepaid API credits (\$5 minimum).',
+        'Go to Dashboard → API keys and click "Create new secret key".',
+        'Copy the secret key (starts with sk-...) immediately and save it securely.',
+        'Paste the key into Memory Box and use "gpt-4o-mini" for fast, affordable retrieval.',
+      ],
+      defaultModel: 'gpt-4o-mini',
+      popularModels: [
+        'gpt-4o-mini',
+        'gpt-4o',
+        'gpt-4-turbo',
+      ],
+      mobileTip:
+          'Requires active developer billing credits. Delivers the highest benchmark reasoning and powers cloud audio transcription.',
+      isFree: false,
+    ),
+    ProviderGuide(
+      key: 'claude',
+      name: 'Anthropic Claude',
+      tag: 'Nuanced Reasoning (Paid)',
+      color: Color(0xFFD97706),
+      icon: Icons.hub_rounded,
+      portalUrl: 'https://console.anthropic.com/settings/keys',
+      portalButtonText: 'Anthropic Console Keys',
+      summary:
+          'World-class conversational depth with Claude 3.5 Sonnet and Haiku. Excels at nuanced memory synthesis, emotional context, and complex recall.',
+      steps: [
+        'Sign in to console.anthropic.com (Anthropic developer platform).',
+        'Navigate to Plans & Billing to add prepaid API credits.',
+        'Navigate to Settings → API Keys and click "Create Key".',
+        'Copy the key (starts with sk-ant-...).',
+        'Paste into Memory Box API Key field and test connection.',
+      ],
+      defaultModel: 'claude-3-5-sonnet-20241022',
+      popularModels: [
+        'claude-3-5-sonnet-20241022',
+        'claude-3-5-haiku-20241022',
+      ],
+      mobileTip:
+          'Requires prepaid credits in the Anthropic Console. Uses Anthropic Messages format natively.',
+      isFree: false,
+    ),
+    ProviderGuide(
+      key: 'huggingface',
+      name: 'Hugging Face',
+      tag: 'Open-Source Hub',
+      color: Color(0xFFFFAC33),
+      icon: Icons.emoji_emotions_rounded,
+      portalUrl: 'https://huggingface.co/settings/tokens',
+      portalButtonText: 'Hugging Face Access Tokens',
+      summary:
+          'Access thousands of open-source models using Hugging Face serverless Inference API with your community account.',
+      steps: [
+        'Create or sign in to your account at huggingface.co.',
+        'Go to Settings → Access Tokens.',
+        'Create a new token with "Read" scope and copy it.',
+        'Paste the token (starts with hf_...) into the Memory Box API Key field.',
+        'Enter any supported model repository ID (e.g. meta-llama/Meta-Llama-3-8B-Instruct).',
+      ],
+      defaultModel: 'meta-llama/Meta-Llama-3-8B-Instruct',
+      popularModels: [
+        'meta-llama/Meta-Llama-3-8B-Instruct',
+        'mistralai/Mistral-7B-Instruct-v0.3',
+        'Qwen/Qwen2.5-7B-Instruct',
+      ],
+      mobileTip:
+          'Serverless models may require 10-20 seconds for cold start on first request if dormant.',
+      isFree: true,
+    ),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _activeKey = widget.initialProvider;
+  }
+
+  ProviderGuide get _currentGuide {
+    return _guides.firstWhere(
+      (g) => g.key == _activeKey,
+      orElse: () => _guides.first,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final guide = _currentGuide;
+    final maxSheetHeight = MediaQuery.of(context).size.height * 0.88;
+
+    return Container(
+      constraints: BoxConstraints(maxHeight: maxSheetHeight),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E1E2E) : Colors.white,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 20,
+            offset: const Offset(0, -4),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Top Handle
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(top: 12, bottom: 8),
+                width: 44,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: (isDark ? Colors.white : Colors.black).withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+
+            // Header Row
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 12, 12),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.menu_book_rounded,
+                      color: AppTheme.primary,
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'AI Provider Setup Guide',
+                          style: GoogleFonts.outfit(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: isDark ? Colors.white : AppTheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'How to get API keys & connect models',
+                          style: GoogleFonts.inter(
+                            fontSize: 12.5,
+                            color: AppTheme.outline,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded),
+                    onPressed: () => Navigator.of(context).pop(),
+                    tooltip: 'Close',
+                  ),
+                ],
+              ),
+            ),
+
+            const Divider(height: 1),
+
+            // Provider Tab Chips
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+              color: isDark
+                  ? Colors.white.withOpacity(0.02)
+                  : Colors.grey.withOpacity(0.04),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: _guides.map((g) {
+                    final isSelected = g.key == _activeKey;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8.0),
+                      child: FilterChip(
+                        selected: isSelected,
+                        showCheckmark: false,
+                        avatar: Icon(
+                          g.icon,
+                          size: 16,
+                          color: isSelected
+                              ? Colors.white
+                              : (isDark ? Colors.white70 : Colors.black87),
+                        ),
+                        label: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              g.name,
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: isSelected
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                                color: isSelected
+                                    ? Colors.white
+                                    : (isDark ? Colors.white : AppTheme.onSurface),
+                              ),
+                            ),
+                            if (g.isFree) ...[
+                              const SizedBox(width: 5),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4.5,
+                                  vertical: 1,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? Colors.white.withOpacity(0.25)
+                                      : AppTheme.success.withOpacity(0.18),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  'FREE',
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w800,
+                                    color: isSelected
+                                        ? Colors.white
+                                        : AppTheme.success,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        selectedColor: g.color,
+                        backgroundColor: isDark
+                            ? const Color(0xFF28283C)
+                            : const Color(0xFFF0F2F6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 2,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                          side: BorderSide(
+                            color: isSelected
+                                ? g.color
+                                : (isDark ? Colors.white12 : Colors.grey.shade300),
+                          ),
+                        ),
+                        onSelected: (_) {
+                          setState(() {
+                            _activeKey = g.key;
+                          });
+                        },
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+
+            const Divider(height: 1),
+
+            // Main Content Area
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Provider Banner Card
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: guide.color.withOpacity(isDark ? 0.12 : 0.08),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: guide.color.withOpacity(0.3),
+                          width: 1.2,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: guide.color.withOpacity(0.2),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  guide.icon,
+                                  color: guide.color,
+                                  size: 20,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      guide.name,
+                                      style: GoogleFonts.outfit(
+                                        fontSize: 17,
+                                        fontWeight: FontWeight.w700,
+                                        color: isDark
+                                            ? Colors.white
+                                            : AppTheme.onSurface,
+                                      ),
+                                    ),
+                                    Text(
+                                      guide.tag,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: guide.color,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            guide.summary,
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              height: 1.45,
+                              color: isDark ? Colors.white70 : Colors.black87,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 18),
+
+                    // Step-by-Step Instructions
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.format_list_numbered_rounded,
+                          size: 18,
+                          color: AppTheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Step-by-Step Setup',
+                          style: GoogleFonts.outfit(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: isDark ? Colors.white : AppTheme.onSurface,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+
+                    // Steps Cards
+                    ...guide.steps.asMap().entries.map((entry) {
+                      final index = entry.key + 1;
+                      final text = entry.value;
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 11,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? const Color(0xFF262638)
+                              : const Color(0xFFF8F9FB),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isDark
+                                ? Colors.white.withOpacity(0.07)
+                                : Colors.grey.shade300,
+                          ),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: 22,
+                              height: 22,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: guide.color.withOpacity(0.18),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Text(
+                                '$index',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: guide.color,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                text,
+                                style: GoogleFonts.inter(
+                                  fontSize: 13,
+                                  height: 1.4,
+                                  color: isDark
+                                      ? Colors.white.withOpacity(0.9)
+                                      : Colors.black87,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+
+                    if (guide.mobileTip != null) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: (guide.key == 'local'
+                                  ? AppTheme.warning
+                                  : AppTheme.primary)
+                              .withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: (guide.key == 'local'
+                                    ? AppTheme.warning
+                                    : AppTheme.primary)
+                                .withOpacity(0.28),
+                          ),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              guide.key == 'local'
+                                  ? Icons.wifi_find_rounded
+                                  : Icons.info_outline_rounded,
+                              size: 20,
+                              color: guide.key == 'local'
+                                  ? AppTheme.warning
+                                  : AppTheme.primary,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                guide.mobileTip!,
+                                style: GoogleFonts.inter(
+                                  fontSize: 12.5,
+                                  height: 1.4,
+                                  fontWeight: FontWeight.w500,
+                                  color: guide.key == 'local'
+                                      ? (isDark
+                                          ? const Color(0xFFFFB74D)
+                                          : const Color(0xFFC65100))
+                                      : (isDark
+                                          ? const Color(0xFF81D4FA)
+                                          : const Color(0xFF0277BD)),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
+                    const SizedBox(height: 18),
+
+                    // Popular Models Section
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.psychology_rounded,
+                          size: 18,
+                          color: AppTheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Recommended Models (Tap to copy)',
+                          style: GoogleFonts.outfit(
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w700,
+                            color: isDark ? Colors.white : AppTheme.onSurface,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: guide.popularModels.map((m) {
+                        final isDefault = m == guide.defaultModel;
+                        return ActionChip(
+                          avatar: Icon(
+                            isDefault
+                                ? Icons.star_rounded
+                                : Icons.copy_rounded,
+                            size: 15,
+                            color: isDefault ? AppTheme.primary : guide.color,
+                          ),
+                          label: Text(
+                            m,
+                            style: GoogleFonts.firaCode(
+                              fontSize: 11.5,
+                              fontWeight: isDefault
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                            ),
+                          ),
+                          backgroundColor: isDark
+                              ? const Color(0xFF262638)
+                              : const Color(0xFFF1F3F7),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            side: BorderSide(
+                              color: isDefault
+                                  ? AppTheme.primary.withOpacity(0.4)
+                                  : (isDark ? Colors.white10 : Colors.grey.shade300),
+                            ),
+                          ),
+                          onPressed: () {
+                            Clipboard.setData(ClipboardData(text: m));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Copied "$m" to clipboard'),
+                                behavior: SnackBarBehavior.floating,
+                                duration: const Duration(seconds: 1),
+                              ),
+                            );
+                          },
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            const Divider(height: 1),
+
+            // Bottom Actions Bar
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => widget.onOpenPortal(guide.key),
+                      icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                      label: Text(
+                        guide.portalButtonText,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12.5),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: guide.color,
+                        side: BorderSide(color: guide.color.withOpacity(0.6)),
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 12,
+                          horizontal: 8,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () => widget.onSelectProvider(guide.key),
+                      icon: const Icon(Icons.check_circle_rounded, size: 16),
+                      label: Text(
+                        'Select & Use',
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: guide.color,
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 12,
+                          horizontal: 8,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
