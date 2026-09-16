@@ -144,6 +144,14 @@ class LLMService {
           final formattedDate = dateFormat.format(m.createdAt);
           var desc =
               'Type: ${m.type.name}\nTitle: $title\nDate: $formattedDate\n';
+          if (m.type == MemoryType.photo || m.type == MemoryType.screenshot) {
+            final photoCount = m.mediaPaths.length;
+            if (photoCount > 1) {
+              desc += 'Photos: $photoCount photos attached\n';
+            } else if (photoCount == 1) {
+              desc += 'Photos: 1 photo attached\n';
+            }
+          }
           if (m.content.isNotEmpty) desc += 'Content: ${m.content}\n';
           if (m.tags.isNotEmpty) desc += 'Tags: ${m.tags.join(', ')}\n';
           if (m.aiAnalysis != null &&
@@ -182,11 +190,15 @@ class LLMService {
        - NEVER output raw ISO timestamps (like 2026-08-24T21:52:44). Use human dates like "Aug 24, 2026" or "Today".
        - NEVER use all-caps robotic labels like (PHOTO, 2026-08-24...).
        - Do NOT put square brackets around memory titles (do not write [Title](...)).
-    4. Formatting & Markdown:
+    4. Multi-Photo Memories & Visual Presentation:
+       - When citing a memory that contains multiple photos (e.g. 3 photos), explicitly mention the number of photos attached (e.g., "...found in your photo memory **Trip to Mountains** (Photo, May 22, 2026) which contains 3 photos").
+       - Mention what each photo shows if detailed in the AI description or notes.
+       - Let the user know the attached photos are displayed directly below in the chat gallery for them to view, swipe, and zoom in full size.
+    5. Formatting & Markdown:
        - Use clean bullet points or numbered lists when presenting multiple items.
        - Highlight key names, amounts, codes, and keywords in **bold**.
        - Format web links as `[Website Name](https://...)`.
-    5. Handle Unmatched Queries:
+    6. Handle Unmatched Queries:
        - If no memory is found, respond concisely: e.g. "I couldn't find any memories about **[query]** in your memory box. Try searching for a different keyword or checking your recent notes."
        - Keep it short and do NOT cite or reference any unrelated memories.
 

@@ -864,8 +864,8 @@ class MemoryFeedState extends State<MemoryFeed> with TickerProviderStateMixin {
       emptyTitle = 'No screenshots yet';
       emptyDesc = 'Tap + to capture a screenshot.';
     } else {
-      emptyTitle = 'No ${_filterType} memories yet';
-      emptyDesc = 'Tap + to add your first ${_filterType} memory.';
+      emptyTitle = 'No $_filterType memories yet';
+      emptyDesc = 'Tap + to add your first $_filterType memory.';
     }
 
     return Center(

@@ -1949,11 +1949,31 @@ class FloatingAssistantOverlayState extends State<FloatingAssistantOverlay>
             ),
             ClipRRect(
               borderRadius: BorderRadius.circular(16),
-              child: InteractiveViewer(
-                minScale: 0.5,
-                maxScale: 4.0,
-                child: Image.file(File(memory.mediaPath!), fit: BoxFit.contain),
-              ),
+              child: memory.mediaPaths.length <= 1
+                  ? InteractiveViewer(
+                      minScale: 0.5,
+                      maxScale: 4.0,
+                      child: Image.file(
+                        File(memory.mediaPaths.isNotEmpty
+                            ? memory.mediaPaths.first
+                            : memory.mediaPath!),
+                        fit: BoxFit.contain,
+                      ),
+                    )
+                  : SizedBox(
+                      height: 280,
+                      child: PageView.builder(
+                        itemCount: memory.mediaPaths.length,
+                        itemBuilder: (ctx, i) => InteractiveViewer(
+                          minScale: 0.5,
+                          maxScale: 4.0,
+                          child: Image.file(
+                            File(memory.mediaPaths[i]),
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                      ),
+                    ),
             ),
             const SizedBox(height: 16),
             Container(
@@ -1996,8 +2016,9 @@ class FloatingAssistantOverlayState extends State<FloatingAssistantOverlay>
 
   Widget _buildReferencedMemoryCard(Memory memory) {
     final color = AppTheme.getMemoryTypeColor(memory.type.name);
+    final imagePaths = memory.mediaPaths;
     final hasImage =
-        memory.mediaPath != null &&
+        imagePaths.isNotEmpty &&
         (memory.type == MemoryType.photo ||
             memory.type == MemoryType.screenshot);
 
@@ -2023,7 +2044,7 @@ class FloatingAssistantOverlayState extends State<FloatingAssistantOverlay>
               children: [
                 if (hasImage)
                   Image.file(
-                    File(memory.mediaPath!),
+                    File(imagePaths.first),
                     height: 120,
                     fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) => Container(

@@ -9,6 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:intl/intl.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:share_plus/share_plus.dart';
 import '../theme/app_theme.dart';
 import '../models/memory.dart';
 import '../database/db_helper.dart';
@@ -321,6 +322,42 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       }
     }
 
+    // Also match any bold titles **Title** in the response that correspond to known memories
+    final boldTitleRegex = RegExp(r'\*\*([^*]+)\*\*');
+    for (final match in boldTitleRegex.allMatches(response)) {
+      final boldText = (match.group(1) ?? '')
+          .trim()
+          .toLowerCase()
+          .replaceAll('"', '')
+          .replaceAll("'", '');
+      if (boldText.length < 3 ||
+          boldText == 'memory title' ||
+          boldText == 'title' ||
+          boldText.startsWith('http')) {
+        continue;
+      }
+      for (final memory in allMemories) {
+        if (!seenIds.contains(memory.id)) {
+          final memTitle = memory.title
+              .toLowerCase()
+              .replaceAll('"', '')
+              .replaceAll("'", '')
+              .trim();
+          if (memTitle.isEmpty) continue;
+          final matchTitle = memTitle.endsWith('...')
+              ? memTitle.substring(0, memTitle.length - 3).trim()
+              : memTitle;
+          if (matchTitle == boldText ||
+              (matchTitle.length >= 4 &&
+                  (boldText.contains(matchTitle) ||
+                      matchTitle.contains(boldText)))) {
+            seenIds.add(memory.id);
+            referenced.add(memory);
+          }
+        }
+      }
+    }
+
     if (referenced.isEmpty) {
       final responseLower = response
           .toLowerCase()
@@ -523,6 +560,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             ],
           ),
           if (!message.isUser && message.referencedMemories.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _buildReferencedMediaSection(message.referencedMemories),
             const SizedBox(height: 10),
             _buildSourcesSection(message.referencedMemories),
           ],
@@ -1092,7 +1131,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   void _showMemoryDetailDialog(BuildContext context, Memory memory) {
-    final hasImage = memory.mediaPath != null &&
+    final imagePaths = memory.mediaPaths;
+    final hasImage = imagePaths.isNotEmpty &&
         (memory.type == MemoryType.photo || memory.type == MemoryType.screenshot);
     final hasVoice = memory.type == MemoryType.voice && memory.mediaPath != null;
 
@@ -1195,26 +1235,44 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                           ),
                           if (hasImage) ...[
                             const SizedBox(height: 16),
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: InteractiveViewer(
-                                minScale: 0.8,
-                                maxScale: 4.0,
-                                child: Image.file(
-                                  File(memory.mediaPath!),
-                                  width: double.infinity,
-                                  height: 240,
-                                  fit: BoxFit.contain,
-                                  errorBuilder: (_, __, ___) => Container(
-                                    height: 120,
-                                    color: AppTheme.surfaceVariant,
-                                    child: const Center(
-                                      child: Icon(Icons.broken_image, color: AppTheme.outline),
+                            if (imagePaths.length <= 1)
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: InteractiveViewer(
+                                  minScale: 0.8,
+                                  maxScale: 4.0,
+                                  child: Image.file(
+                                    File(imagePaths.first),
+                                    width: double.infinity,
+                                    height: 240,
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (_, __, ___) => Container(
+                                      height: 120,
+                                      color: AppTheme.surfaceVariant,
+                                      child: const Center(
+                                        child: Icon(Icons.broken_image, color: AppTheme.outline),
+                                      ),
                                     ),
                                   ),
                                 ),
+                              )
+                            else
+                              _DetailMultiPhotoCarousel(
+                                paths: imagePaths,
+                                onExpand: () {
+                                  final photoItems = imagePaths
+                                      .asMap()
+                                      .entries
+                                      .map((e) => _ReferencedPhotoItem(
+                                            path: e.value,
+                                            memory: memory,
+                                            indexInParent: e.key,
+                                            totalInParent: imagePaths.length,
+                                          ))
+                                      .toList();
+                                  _openPhotoGalleryViewer(context, photoItems, 0);
+                                },
                               ),
-                            ),
                           ],
                           if (hasVoice) ...[
                             const SizedBox(height: 16),
@@ -1366,6 +1424,248 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
+  void _openPhotoGalleryViewer(
+    BuildContext context,
+    List<_ReferencedPhotoItem> photoItems,
+    int initialIndex,
+  ) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (ctx) => _PhotoGalleryViewer(
+          items: photoItems,
+          initialIndex: initialIndex,
+          onShowMemoryDetail: (mem) {
+            _showMemoryDetailDialog(context, mem);
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReferencedMediaSection(List<Memory> memories) {
+    final photoItems = <_ReferencedPhotoItem>[];
+    for (final mem in memories) {
+      if (mem.type == MemoryType.photo || mem.type == MemoryType.screenshot) {
+        final paths = mem.mediaPaths;
+        for (int i = 0; i < paths.length; i++) {
+          photoItems.add(_ReferencedPhotoItem(
+            path: paths[i],
+            memory: mem,
+            indexInParent: i,
+            totalInParent: paths.length,
+          ));
+        }
+      }
+    }
+
+    if (photoItems.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF8B5CF6).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.photo_library_rounded,
+                      size: 13,
+                      color: Color(0xFF8B5CF6),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      'ATTACHED PHOTOS (${photoItems.length})',
+                      style: GoogleFonts.jetBrainsMono(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF8B5CF6),
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Tap to zoom & inspect',
+                style: GoogleFonts.inter(
+                  fontSize: 10.5,
+                  color: AppTheme.outline,
+                ),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(
+          height: 155,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            clipBehavior: Clip.none,
+            itemCount: photoItems.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            itemBuilder: (context, idx) => _buildPhotoItemCard(photoItems, idx),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPhotoItemCard(List<_ReferencedPhotoItem> photoItems, int idx) {
+    final item = photoItems[idx];
+    final mem = item.memory;
+    final isMulti = item.totalInParent > 1;
+
+    String displayTitle = mem.title.trim();
+    if (displayTitle.startsWith('Image saved.') ||
+        displayTitle.startsWith('Untitled')) {
+      if (mem.content.isNotEmpty) {
+        displayTitle = mem.content.split('\n').first.trim();
+      } else {
+        displayTitle = 'Photo Memory';
+      }
+    }
+    if (displayTitle.length > 22) {
+      displayTitle = '${displayTitle.substring(0, 22)}...';
+    }
+
+    return GestureDetector(
+      onTap: () => _openPhotoGalleryViewer(context, photoItems, idx),
+      child: Container(
+        width: 145,
+        height: 155,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.08),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Image.file(
+                File(item.path),
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  color: AppTheme.surfaceContainer,
+                  child: const Center(
+                    child: Icon(Icons.broken_image_rounded,
+                        color: AppTheme.outline, size: 32),
+                  ),
+                ),
+              ),
+              // Bottom gradient overlay for title
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(8, 20, 8, 8),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.transparent,
+                        Colors.black.withValues(alpha: 0.85),
+                      ],
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        displayTitle,
+                        style: GoogleFonts.inter(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _formatHumanDate(mem.createdAt),
+                        style: GoogleFonts.inter(
+                          color: Colors.white.withValues(alpha: 0.75),
+                          fontSize: 9.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              // Photo index badge if part of a multi-photo memory
+              if (isMulti)
+                Positioned(
+                  top: 8,
+                  left: 8,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.65),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.photo_library_rounded,
+                            size: 10, color: Colors.white),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${item.indexInParent + 1}/${item.totalInParent}',
+                          style: GoogleFonts.jetBrainsMono(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              // Zoom icon indicator on top right
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.55),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.fullscreen_rounded,
+                    size: 14,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildSourcesSection(List<Memory> memories) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1420,9 +1720,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildReferencedMemoryCard(Memory memory) {
-    final hasImage = memory.mediaPath != null &&
+    final imagePaths = memory.mediaPaths;
+    final hasImage = imagePaths.isNotEmpty &&
         (memory.type == MemoryType.photo ||
             memory.type == MemoryType.screenshot);
+    final isMulti = imagePaths.length > 1;
 
     Color badgeColor;
     IconData typeIcon;
@@ -1445,7 +1747,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         typeLabel = 'Voice';
         break;
       case MemoryType.text:
-      default:
         badgeColor = const Color(0xFF3B82F6);
         typeIcon = Icons.article_rounded;
         typeLabel = 'Note';
@@ -1494,27 +1795,52 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             // Thumbnail / Icon box
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
-              child: Container(
-                width: 48,
-                height: 56,
-                color: badgeColor.withValues(alpha: 0.12),
-                child: hasImage
-                    ? Image.file(
-                        File(memory.mediaPath!),
-                        width: 48,
-                        height: 56,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Icon(
-                          typeIcon,
-                          color: badgeColor,
-                          size: 22,
+              child: Stack(
+                children: [
+                  Container(
+                    width: 48,
+                    height: 56,
+                    color: badgeColor.withValues(alpha: 0.12),
+                    child: hasImage
+                        ? Image.file(
+                            File(imagePaths.first),
+                            width: 48,
+                            height: 56,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Icon(
+                              typeIcon,
+                              color: badgeColor,
+                              size: 22,
+                            ),
+                          )
+                        : Icon(
+                            typeIcon,
+                            color: badgeColor,
+                            size: 22,
+                          ),
+                  ),
+                  if (hasImage && isMulti)
+                    Positioned(
+                      bottom: 2,
+                      right: 2,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.75),
+                          borderRadius: BorderRadius.circular(4),
                         ),
-                      )
-                    : Icon(
-                        typeIcon,
-                        color: badgeColor,
-                        size: 22,
+                        child: Text(
+                          '+${imagePaths.length - 1}',
+                          style: GoogleFonts.jetBrainsMono(
+                            fontSize: 8.5,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
                       ),
+                    ),
+                ],
               ),
             ),
             const SizedBox(width: 10),
@@ -1559,7 +1885,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    formattedDate,
+                    isMulti
+                        ? '$formattedDate · ${imagePaths.length} photos'
+                        : formattedDate,
                     style: GoogleFonts.inter(
                       fontSize: 10.5,
                       color: AppTheme.outline,
@@ -1607,6 +1935,533 @@ class _ChatMessage {
     required this.timestamp,
     this.referencedMemories = const [],
   });
+}
+
+class _ReferencedPhotoItem {
+  final String path;
+  final Memory memory;
+  final int indexInParent;
+  final int totalInParent;
+
+  const _ReferencedPhotoItem({
+    required this.path,
+    required this.memory,
+    required this.indexInParent,
+    required this.totalInParent,
+  });
+}
+
+class _DetailMultiPhotoCarousel extends StatefulWidget {
+  final List<String> paths;
+  final VoidCallback? onExpand;
+
+  const _DetailMultiPhotoCarousel({
+    required this.paths,
+    this.onExpand,
+  });
+
+  @override
+  State<_DetailMultiPhotoCarousel> createState() =>
+      _DetailMultiPhotoCarouselState();
+}
+
+class _DetailMultiPhotoCarouselState extends State<_DetailMultiPhotoCarousel> {
+  int _currentPage = 0;
+  late final PageController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = PageController();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final total = widget.paths.length;
+
+    return Column(
+      children: [
+        Stack(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Container(
+                height: 260,
+                color: Colors.black.withValues(alpha: 0.05),
+                child: PageView.builder(
+                  controller: _controller,
+                  itemCount: total,
+                  onPageChanged: (idx) => setState(() => _currentPage = idx),
+                  itemBuilder: (context, index) {
+                    return InteractiveViewer(
+                      minScale: 0.8,
+                      maxScale: 4.0,
+                      child: Image.file(
+                        File(widget.paths[index]),
+                        width: double.infinity,
+                        height: 260,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => Container(
+                          height: 140,
+                          color: AppTheme.surfaceVariant,
+                          child: const Center(
+                            child: Icon(Icons.broken_image,
+                                color: AppTheme.outline),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+            // Top Counter Badge
+            Positioned(
+              top: 10,
+              left: 10,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.65),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.photo_library_rounded,
+                        size: 12, color: Colors.white),
+                    const SizedBox(width: 5),
+                    Text(
+                      '${_currentPage + 1} of $total',
+                      style: GoogleFonts.jetBrainsMono(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            // Full screen expand button on top right
+            if (widget.onExpand != null)
+              Positioned(
+                top: 10,
+                right: 10,
+                child: GestureDetector(
+                  onTap: widget.onExpand,
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.65),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.fullscreen_rounded,
+                      size: 18,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            // Prev button
+            if (_currentPage > 0)
+              Positioned(
+                left: 6,
+                top: 0,
+                bottom: 0,
+                child: Center(
+                  child: GestureDetector(
+                    onTap: () {
+                      _controller.previousPage(
+                        duration: const Duration(milliseconds: 250),
+                        curve: Curves.easeInOut,
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.5),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.chevron_left_rounded,
+                          color: Colors.white, size: 22),
+                    ),
+                  ),
+                ),
+              ),
+            // Next button
+            if (_currentPage < total - 1)
+              Positioned(
+                right: 6,
+                top: 0,
+                bottom: 0,
+                child: Center(
+                  child: GestureDetector(
+                    onTap: () {
+                      _controller.nextPage(
+                        duration: const Duration(milliseconds: 250),
+                        curve: Curves.easeInOut,
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.5),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.chevron_right_rounded,
+                          color: Colors.white, size: 22),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        // Indicator dots
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(total, (index) {
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              margin: const EdgeInsets.symmetric(horizontal: 3),
+              width: _currentPage == index ? 16 : 6,
+              height: 6,
+              decoration: BoxDecoration(
+                color: _currentPage == index
+                    ? AppTheme.primary
+                    : AppTheme.outlineVariant,
+                borderRadius: BorderRadius.circular(3),
+              ),
+            );
+          }),
+        ),
+      ],
+    );
+  }
+}
+
+class _PhotoGalleryViewer extends StatefulWidget {
+  final List<_ReferencedPhotoItem> items;
+  final int initialIndex;
+  final void Function(Memory memory)? onShowMemoryDetail;
+
+  const _PhotoGalleryViewer({
+    required this.items,
+    required this.initialIndex,
+    this.onShowMemoryDetail,
+  });
+
+  @override
+  State<_PhotoGalleryViewer> createState() => _PhotoGalleryViewerState();
+}
+
+class _PhotoGalleryViewerState extends State<_PhotoGalleryViewer> {
+  late PageController _pageController;
+  late int _currentIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.initialIndex;
+    _pageController = PageController(initialPage: widget.initialIndex);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  void _shareCurrentPhoto() async {
+    final currentItem = widget.items[_currentIndex];
+    final file = File(currentItem.path);
+    if (await file.exists()) {
+      await Share.shareXFiles(
+        [XFile(currentItem.path)],
+        text: currentItem.memory.title,
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currentItem = widget.items[_currentIndex];
+    final mem = currentItem.memory;
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            // PageView of Photos with InteractiveViewer
+            PageView.builder(
+              controller: _pageController,
+              itemCount: widget.items.length,
+              onPageChanged: (idx) => setState(() => _currentIndex = idx),
+              itemBuilder: (context, idx) {
+                final item = widget.items[idx];
+                return InteractiveViewer(
+                  minScale: 0.8,
+                  maxScale: 4.0,
+                  child: Center(
+                    child: Image.file(
+                      File(item.path),
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => const Center(
+                        child: Icon(Icons.broken_image_rounded,
+                            color: Colors.white54, size: 64),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+
+            // Top Navigation Bar
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.black.withValues(alpha: 0.85),
+                      Colors.transparent,
+                    ],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded,
+                          color: Colors.white, size: 28),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        'Photo ${_currentIndex + 1} of ${widget.items.length}',
+                        style: GoogleFonts.jetBrainsMono(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.share_rounded,
+                              color: Colors.white, size: 22),
+                          onPressed: _shareCurrentPhoto,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.info_outline_rounded,
+                              color: Colors.white, size: 24),
+                          onPressed: () {
+                            widget.onShowMemoryDetail?.call(mem);
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Left & Right Arrow Buttons for easy navigation
+            if (widget.items.length > 1) ...[
+              if (_currentIndex > 0)
+                Positioned(
+                  left: 12,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: IconButton.filled(
+                      style: IconButton.styleFrom(
+                        backgroundColor: Colors.black.withValues(alpha: 0.5),
+                      ),
+                      icon: const Icon(Icons.chevron_left_rounded,
+                          color: Colors.white, size: 32),
+                      onPressed: () {
+                        _pageController.previousPage(
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeInOut,
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              if (_currentIndex < widget.items.length - 1)
+                Positioned(
+                  right: 12,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: IconButton.filled(
+                      style: IconButton.styleFrom(
+                        backgroundColor: Colors.black.withValues(alpha: 0.5),
+                      ),
+                      icon: const Icon(Icons.chevron_right_rounded,
+                          color: Colors.white, size: 32),
+                      onPressed: () {
+                        _pageController.nextPage(
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeInOut,
+                        );
+                      },
+                    ),
+                  ),
+                ),
+            ],
+
+            // Bottom Bar: Memory Info and Filmstrip
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.9),
+                    ],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                mem.title,
+                                style: GoogleFonts.hankenGrotesk(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                DateFormat("MMMM d, yyyy").format(mem.createdAt),
+                                style: GoogleFonts.inter(
+                                  color: Colors.white70,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: () => widget.onShowMemoryDetail?.call(mem),
+                          icon: const Icon(Icons.notes_rounded,
+                              size: 16, color: Colors.white),
+                          label: const Text(
+                            'Details',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold),
+                          ),
+                          style: TextButton.styleFrom(
+                            backgroundColor: AppTheme.primary,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 8),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10)),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (widget.items.length > 1) ...[
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        height: 52,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: widget.items.length,
+                          separatorBuilder: (_, __) => const SizedBox(width: 8),
+                          itemBuilder: (context, idx) {
+                            final isSelected = idx == _currentIndex;
+                            return GestureDetector(
+                              onTap: () {
+                                _pageController.animateToPage(
+                                  idx,
+                                  duration: const Duration(milliseconds: 250),
+                                  curve: Curves.easeInOut,
+                                );
+                              },
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                width: 52,
+                                height: 52,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: isSelected
+                                        ? AppTheme.primary
+                                        : Colors.white30,
+                                    width: isSelected ? 2.5 : 1,
+                                  ),
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: Image.file(
+                                    File(widget.items[idx].path),
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Container(
+                                      color: Colors.grey[800],
+                                      child: const Icon(Icons.broken_image,
+                                          size: 18, color: Colors.white54),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class CodeBlockBuilder extends MarkdownElementBuilder {
