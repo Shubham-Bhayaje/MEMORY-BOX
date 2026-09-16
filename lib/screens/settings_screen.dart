@@ -681,32 +681,12 @@ class _SettingsScreenState extends State<SettingsScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const Icon(Icons.psychology_rounded, size: 26, color: AppTheme.primary),
               const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Intelligence Engine',
-                  style: AppTheme.headlineMd.copyWith(fontSize: 19),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(width: 8),
-              TextButton.icon(
-                onPressed: () => _showAiProviderHelpDialog(context),
-                icon: const Icon(Icons.help_outline_rounded, size: 15, color: AppTheme.primary),
-                label: const Text(
-                  'Setup Guide',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5),
-                ),
-                style: TextButton.styleFrom(
-                  backgroundColor: AppTheme.primary.withValues(alpha: 0.08),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
+              Text(
+                'Intelligence Engine',
+                style: AppTheme.headlineMd.copyWith(fontSize: 20),
               ),
             ],
           ),
@@ -714,20 +694,28 @@ class _SettingsScreenState extends State<SettingsScreen>
           
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               _buildLabel('AI PROVIDER'),
               InkWell(
                 onTap: () => _showAiProviderHelpDialog(context, initialProvider: _selectedProvider),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.menu_book_rounded, size: 13, color: AppTheme.secondary),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Provider Guide',
-                      style: AppTheme.labelCaps.copyWith(color: AppTheme.secondary),
-                    ),
-                  ],
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.help_outline_rounded, size: 14, color: AppTheme.secondary),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Provider Guide',
+                        style: AppTheme.labelCaps.copyWith(
+                          color: AppTheme.secondary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
