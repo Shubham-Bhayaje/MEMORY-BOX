@@ -681,28 +681,28 @@ class _SettingsScreenState extends State<SettingsScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Row(
-                children: [
-                  const Icon(Icons.psychology_rounded, size: 28, color: AppTheme.primary),
-                  const SizedBox(width: 12),
-                  Text(
-                    'Intelligence Engine',
-                    style: AppTheme.headlineMd.copyWith(fontSize: 22),
-                  ),
-                ],
+              const Icon(Icons.psychology_rounded, size: 26, color: AppTheme.primary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Intelligence Engine',
+                  style: AppTheme.headlineMd.copyWith(fontSize: 19),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
+              const SizedBox(width: 8),
               TextButton.icon(
                 onPressed: () => _showAiProviderHelpDialog(context),
-                icon: const Icon(Icons.help_outline_rounded, size: 16, color: AppTheme.primary),
+                icon: const Icon(Icons.help_outline_rounded, size: 15, color: AppTheme.primary),
                 label: const Text(
                   'Setup Guide',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11.5),
                 ),
                 style: TextButton.styleFrom(
                   backgroundColor: AppTheme.primary.withValues(alpha: 0.08),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   minimumSize: Size.zero,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -803,32 +803,39 @@ class _SettingsScreenState extends State<SettingsScreen>
           if (needsKey) ...[
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 _buildLabel('API KEY'),
-                Row(
-                  children: [
-                    InkWell(
-                      onTap: () => _showAiProviderHelpDialog(context, initialProvider: _selectedProvider),
-                      child: Text(
-                        'Where to get key?',
-                        style: AppTheme.labelCaps.copyWith(color: AppTheme.outline),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Wrap(
+                    alignment: WrapAlignment.end,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 12,
+                    children: [
+                      InkWell(
+                        onTap: () => _showAiProviderHelpDialog(context, initialProvider: _selectedProvider),
+                        child: Text(
+                          'Where to get key?',
+                          style: AppTheme.labelCaps.copyWith(color: AppTheme.outline),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    InkWell(
-                      onTap: () => _openGetKeyUrl(_selectedProvider),
-                      child: Row(
-                        children: [
-                          Text(
-                            'Get Key',
-                            style: AppTheme.labelCaps.copyWith(color: AppTheme.primary),
-                          ),
-                          const SizedBox(width: 2),
-                          const Icon(Icons.open_in_new_rounded, size: 11, color: AppTheme.primary),
-                        ],
+                      InkWell(
+                        onTap: () => _openGetKeyUrl(_selectedProvider),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Get Key',
+                              style: AppTheme.labelCaps.copyWith(color: AppTheme.primary),
+                            ),
+                            const SizedBox(width: 2),
+                            const Icon(Icons.open_in_new_rounded, size: 11, color: AppTheme.primary),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -1207,6 +1214,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => AiProviderHelpSheet(
         initialProvider: initialProvider ?? _selectedProvider,
@@ -1818,26 +1826,25 @@ class AiProviderHelpSheetState extends State<AiProviderHelpSheet> {
     final isDark = theme.brightness == Brightness.dark;
     final guide = _currentGuide;
     final maxSheetHeight = MediaQuery.of(context).size.height * 0.88;
-
-    return Container(
-      constraints: BoxConstraints(maxHeight: maxSheetHeight),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E1E2E) : Colors.white,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.2),
-            blurRadius: 20,
-            offset: const Offset(0, -4),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
+    return SizedBox(
+      height: maxSheetHeight,
+      child: Container(
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E1E2E) : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.2),
+              blurRadius: 20,
+              offset: const Offset(0, -4),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
             // Top Handle
             Center(
               child: Container(
@@ -2085,12 +2092,14 @@ class AiProviderHelpSheetState extends State<AiProviderHelpSheet> {
                           color: AppTheme.primary,
                         ),
                         const SizedBox(width: 8),
-                        Text(
-                          'Step-by-Step Setup',
-                          style: GoogleFonts.outfit(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                            color: isDark ? Colors.white : AppTheme.onSurface,
+                        Expanded(
+                          child: Text(
+                            'Step-by-Step Setup',
+                            style: GoogleFonts.outfit(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: isDark ? Colors.white : AppTheme.onSurface,
+                            ),
                           ),
                         ),
                       ],
@@ -2219,12 +2228,14 @@ class AiProviderHelpSheetState extends State<AiProviderHelpSheet> {
                           color: AppTheme.primary,
                         ),
                         const SizedBox(width: 8),
-                        Text(
-                          'Recommended Models (Tap to copy)',
-                          style: GoogleFonts.outfit(
-                            fontSize: 14.5,
-                            fontWeight: FontWeight.w700,
-                            color: isDark ? Colors.white : AppTheme.onSurface,
+                        Expanded(
+                          child: Text(
+                            'Recommended Models (Tap to copy)',
+                            style: GoogleFonts.outfit(
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w700,
+                              color: isDark ? Colors.white : AppTheme.onSurface,
+                            ),
                           ),
                         ),
                       ],
@@ -2285,18 +2296,12 @@ class AiProviderHelpSheetState extends State<AiProviderHelpSheet> {
 
             // Bottom Actions Bar
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
               child: Row(
                 children: [
                   Expanded(
-                    child: OutlinedButton.icon(
+                    child: OutlinedButton(
                       onPressed: () => widget.onOpenPortal(guide.key),
-                      icon: const Icon(Icons.open_in_new_rounded, size: 16),
-                      label: Text(
-                        guide.portalButtonText,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 12.5),
-                      ),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: guide.color,
                         side: BorderSide(color: guide.color.withOpacity(0.6)),
@@ -2308,22 +2313,28 @@ class AiProviderHelpSheetState extends State<AiProviderHelpSheet> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.open_in_new_rounded, size: 15),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              guide.portalButtonText,
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: ElevatedButton.icon(
+                    child: ElevatedButton(
                       onPressed: () => widget.onSelectProvider(guide.key),
-                      icon: const Icon(Icons.check_circle_rounded, size: 16),
-                      label: Text(
-                        'Select & Use',
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
-                      ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: guide.color,
                         padding: const EdgeInsets.symmetric(
@@ -2334,6 +2345,26 @@ class AiProviderHelpSheetState extends State<AiProviderHelpSheet> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.check_circle_rounded, size: 15, color: Colors.white),
+                          SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              'Select & Use',
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],
@@ -2342,7 +2373,8 @@ class AiProviderHelpSheetState extends State<AiProviderHelpSheet> {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }
 

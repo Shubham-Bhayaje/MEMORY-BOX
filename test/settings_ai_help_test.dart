@@ -82,4 +82,34 @@ void main() {
     await tester.pump();
     expect(find.textContaining('Copied "llama3.2" to clipboard'), findsOneWidget);
   });
+
+  testWidgets('AiProviderHelpSheet bottom buttons and layout do not overflow on narrow screens',
+      (WidgetTester tester) async {
+    // Test on a narrow 320px screen
+    tester.view.physicalSize = const Size(320, 600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AiProviderHelpSheet(
+            initialProvider: 'local',
+            onSelectProvider: (_) {},
+            onOpenPortal: (_) {},
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    // Verify buttons render cleanly without throwing RenderFlex overflow
+    expect(find.text('Select & Use'), findsOneWidget);
+    expect(find.byType(ElevatedButton), findsOneWidget);
+    expect(find.byType(OutlinedButton), findsOneWidget);
+  });
 }
