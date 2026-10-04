@@ -17,12 +17,20 @@ class AddMemorySheet extends StatefulWidget {
   final VoidCallback onMemoryAdded;
   final Memory? memoryToEdit;
   final String? initialType;
+  final String? initialContent;
+  final List<File>? initialImages;
+  final bool autoProcess;
+  final List<String>? initialTags;
 
   const AddMemorySheet({
     super.key,
     required this.onMemoryAdded,
     this.memoryToEdit,
     this.initialType,
+    this.initialContent,
+    this.initialImages,
+    this.autoProcess = false,
+    this.initialTags,
   });
 
   @override
@@ -53,6 +61,7 @@ class _AddMemorySheetState extends State<AddMemorySheet>
   late AnimationController _pulseController;
   bool _speechEnabled = false;
   bool _useSystemSTT = true;
+  bool _isFromShare = false;
 
   final FocusNode _contentFocusNode = FocusNode();
 
@@ -70,6 +79,7 @@ class _AddMemorySheetState extends State<AddMemorySheet>
     _loadSTTSetting();
     _hydrateEditState();
     _hydrateInitialType();
+    _hydrateSharedContent();
   }
 
   void _hydrateInitialType() {
@@ -86,6 +96,54 @@ class _AddMemorySheetState extends State<AddMemorySheet>
         }
       });
     });
+  }
+
+  /// Pre-fill fields when opened from Android share sheet.
+  void _hydrateSharedContent() {
+    if (widget.memoryToEdit != null) return;
+    final hasSharedContent = widget.initialContent != null ||
+        (widget.initialImages != null && widget.initialImages!.isNotEmpty);
+    if (!hasSharedContent) return;
+
+    _isFromShare = true;
+
+    // Pre-fill content
+    if (widget.initialContent != null && widget.initialContent!.trim().isNotEmpty) {
+      _contentController.text = widget.initialContent!.trim();
+      // Auto-generate a title from shared text
+      if (_titleController.text.trim().isEmpty) {
+        _titleController.text = _titleFromText(widget.initialContent!);
+      }
+    }
+
+    // Pre-fill images
+    if (widget.initialImages != null && widget.initialImages!.isNotEmpty) {
+      _selectedImages = List<File>.from(widget.initialImages!);
+    }
+
+    // Pre-fill tags
+    if (widget.initialTags != null) {
+      for (final tag in widget.initialTags!) {
+        final clean = InputValidator.sanitizeTag(tag);
+        if (clean.isNotEmpty && !_tags.contains(clean)) {
+          _tags.add(clean);
+        }
+      }
+    }
+
+    // Auto-trigger AI processing after a short delay
+    if (widget.autoProcess) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Future.delayed(const Duration(milliseconds: 400), () {
+          if (!mounted) return;
+          if (_selectedImages.isNotEmpty) {
+            _analyzeImage();
+          } else if (_contentController.text.trim().length >= 3) {
+            _enhanceTextNote();
+          }
+        });
+      });
+    }
   }
 
   void _hydrateEditState() {
@@ -608,25 +666,55 @@ class _AddMemorySheetState extends State<AddMemorySheet>
     final editing = widget.memoryToEdit != null;
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            editing ? 'Edit Memory' : 'Capture Memory',
-            style: AppTheme.titleSm,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                editing ? 'Edit Memory' : (_isFromShare ? 'Save Shared Content' : 'Capture Memory'),
+                style: AppTheme.titleSm,
+              ),
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(24),
+                  hoverColor: AppTheme.surfaceVariant,
+                  onTap: _isSaving ? null : () => Navigator.of(context).pop(),
+                  child: const Padding(
+                    padding: EdgeInsets.all(8.0),
+                    child: Icon(Icons.close, size: 24, color: AppTheme.onSurface),
+                  ),
+                ),
+              ),
+            ],
           ),
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(24),
-              hoverColor: AppTheme.surfaceVariant,
-              onTap: _isSaving ? null : () => Navigator.of(context).pop(),
-              child: const Padding(
-                padding: EdgeInsets.all(8.0),
-                child: Icon(Icons.close, size: 24, color: AppTheme.onSurface),
+          if (_isFromShare) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: AppTheme.secondary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.share_rounded, size: 14, color: AppTheme.secondary),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Shared from another app',
+                    style: AppTheme.labelCaps.copyWith(
+                      color: AppTheme.secondary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
+          ],
         ],
       ),
     );

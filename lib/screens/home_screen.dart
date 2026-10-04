@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
@@ -15,6 +16,9 @@ import 'chat_screen.dart';
 import 'settings_screen.dart';
 import 'add_memory_sheet.dart';
 import 'floating_assistant.dart';
+import '../services/share_receiver_service.dart';
+import '../services/screenshot_detector_service.dart';
+import 'screenshot_review_sheet.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -37,6 +41,10 @@ class _HomeScreenState extends State<HomeScreen>
   bool _isLocked = false;
   bool _biometricEnabled = false;
   bool _isAuthenticating = false;
+  final ShareReceiverService _shareReceiver = ShareReceiverService.instance;
+  StreamSubscription<SharedContent>? _shareSubscription;
+  final ScreenshotDetectorService _screenshotDetector = ScreenshotDetectorService.instance;
+  StreamSubscription<DetectedScreenshot>? _screenshotSubscription;
 
   @override
   void initState() {
@@ -47,12 +55,118 @@ class _HomeScreenState extends State<HomeScreen>
       duration: const Duration(milliseconds: 280),
     )..forward();
     _initSystemOverlay();
+    _initShareReceiver();
+    _initScreenshotDetector();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _refreshOverlayState();
       _checkAndProcessPendingOverlayAction();
       _checkInitialBiometricLock();
     });
+  }
+
+  /// Initialize screenshot auto-detection listener.
+  void _initScreenshotDetector() {
+    _screenshotDetector.init();
+    _screenshotSubscription = _screenshotDetector.stream.listen((DetectedScreenshot screenshot) {
+      if (!mounted) return;
+      if (_isLocked && _biometricEnabled) {
+        _authenticateBiometricsAndThen(() => _showScreenshotReview(screenshot));
+      } else {
+        _showScreenshotReview(screenshot);
+      }
+    });
+  }
+
+  /// Show the screenshot review sheet for an auto-detected screenshot.
+  void _showScreenshotReview(DetectedScreenshot screenshot) {
+    if (!mounted) return;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => ScreenshotReviewSheet(
+        screenshotFile: screenshot.file,
+        onMemoryAdded: () {
+          _feedKey.currentState?.loadMemories();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Screenshot saved to Memory Box!'),
+                behavior: SnackBarBehavior.floating,
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+        },
+      ),
+    );
+  }
+
+  /// Initialize the share receiver to listen for content shared from other apps.
+  void _initShareReceiver() {
+    _shareReceiver.init();
+    _shareSubscription = _shareReceiver.stream.listen((SharedContent content) {
+      if (!mounted) return;
+      if (_isLocked && _biometricEnabled) {
+        // If vault is locked, authenticate first, then open with shared content
+        _authenticateBiometricsAndThen(() => _openAddMemoryWithSharedContent(content));
+      } else {
+        _openAddMemoryWithSharedContent(content);
+      }
+    });
+  }
+
+  /// Authenticate biometrics and then call [onSuccess] if authenticated.
+  Future<void> _authenticateBiometricsAndThen(VoidCallback onSuccess) async {
+    if (_isAuthenticating) return;
+    _isAuthenticating = true;
+    try {
+      final authenticated = await _localAuth.authenticate(
+        localizedReason: 'Unlock your Memory Box vault to save shared content',
+        options: const AuthenticationOptions(
+          stickyAuth: true,
+          biometricOnly: false,
+        ),
+      );
+      if (authenticated && mounted) {
+        setState(() => _isLocked = false);
+        onSuccess();
+      }
+    } catch (e) {
+      debugPrint('Biometric authentication error: $e');
+    } finally {
+      _isAuthenticating = false;
+    }
+  }
+
+  /// Open AddMemorySheet pre-populated with content from Android share sheet.
+  void _openAddMemoryWithSharedContent(SharedContent content) {
+    if (!mounted) return;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => AddMemorySheet(
+        initialType: content.suggestedType,
+        initialContent: content.hasText ? content.text : null,
+        initialImages: content.hasImages ? content.images : null,
+        initialTags: content.autoTags,
+        autoProcess: true,
+        onMemoryAdded: () {
+          _feedKey.currentState?.loadMemories();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Shared content saved to Memory Box!'),
+                behavior: SnackBarBehavior.floating,
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+        },
+      ),
+    );
   }
 
   @override
@@ -258,6 +372,8 @@ class _HomeScreenState extends State<HomeScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _fabController.dispose();
+    _shareSubscription?.cancel();
+    _screenshotSubscription?.cancel();
     super.dispose();
   }
 
