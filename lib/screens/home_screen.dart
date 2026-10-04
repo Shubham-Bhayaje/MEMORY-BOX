@@ -45,6 +45,7 @@ class _HomeScreenState extends State<HomeScreen>
   StreamSubscription<SharedContent>? _shareSubscription;
   final ScreenshotDetectorService _screenshotDetector = ScreenshotDetectorService.instance;
   StreamSubscription<DetectedScreenshot>? _screenshotSubscription;
+  Timer? _lockTimer;
 
   @override
   void initState() {
@@ -172,10 +173,20 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
-      if (_biometricEnabled) {
-        setState(() => _isLocked = true);
+      if (_biometricEnabled && !_isLocked) {
+        // Start a grace period — only lock if the app stays in background for 5+ seconds.
+        // This prevents locking on brief events like notification shade, permission dialogs, etc.
+        _lockTimer?.cancel();
+        _lockTimer = Timer(const Duration(seconds: 5), () {
+          if (mounted && _biometricEnabled) {
+            setState(() => _isLocked = true);
+          }
+        });
       }
     } else if (state == AppLifecycleState.resumed) {
+      // Cancel the lock timer if user returns quickly
+      _lockTimer?.cancel();
+      _lockTimer = null;
       _refreshOverlayState();
       _checkAndProcessPendingOverlayAction();
       _checkBiometricOnResume();
@@ -374,6 +385,7 @@ class _HomeScreenState extends State<HomeScreen>
     _fabController.dispose();
     _shareSubscription?.cancel();
     _screenshotSubscription?.cancel();
+    _lockTimer?.cancel();
     super.dispose();
   }
 
